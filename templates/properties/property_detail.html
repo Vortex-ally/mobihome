@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}{{ property.name }} — mobi Home{% endblock %}
 
 {% block content %}
@@ -42,7 +43,7 @@
     
     <div class="row align-items-end g-3">
         <div class="col-12 col-md-8">
-            <h1 class="property-detail-title mb-1.5 fw-bold text-white tracking-tight" style="font-size: clamp(1.6rem, 3vw, 2.25rem); letter-spacing: -0.025em; line-height: 1.25;">{{ property.name }}</h1>
+            <h1 class="property-detail-title mb-1.5 fw-bold tracking-tight" style="color: var(--text); font-size: clamp(1.6rem, 3vw, 2.25rem); letter-spacing: -0.025em; line-height: 1.25;">{{ property.name }}</h1>
             <p class="text-muted mb-0 d-flex align-items-center gap-1.5" style="color: var(--text-muted); font-size: 0.95rem; font-weight: 500;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="var(--accent)" class="bi bi-geo-alt-fill flex-shrink-0" viewBox="0 0 16 16"><path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>
                 <span>{% if property.city %}{{ property.city }}, {% endif %}{{ property.address }}</span>
@@ -73,7 +74,7 @@
                 <div class="carousel-inner" style="aspect-ratio: 16/10; width: 100%;">
                     {% for photo_url in property_photos %}
                     <div class="carousel-item h-100 {% if forloop.first %}active{% endif %}" data-bs-interval="false">
-                        <img src="{{ photo_url }}" class="d-block w-100 h-100 object-fit-cover cursor-pointer" alt="{{ property.name }}" style="object-fit: cover; aspect-ratio: 16/10; cursor: pointer;" data-bs-toggle="modal" data-bs-target="#lightboxModal" onclick="setLightboxIndex({{ forloop.counter0 }})" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200';">
+                        <img src="{{ photo_url }}" class="d-block w-100 h-100 object-fit-cover cursor-pointer" alt="{{ property.name }}" style="object-fit: cover; aspect-ratio: 16/10; cursor: pointer;" data-bs-toggle="modal" data-bs-target="#lightboxModal" onclick="setLightboxIndex({{ forloop.counter0 }})" onerror="this.onerror=null;this.src='{% static 'img/no-photo.svg' %}';">
                     </div>
                     {% endfor %}
                 </div>
@@ -92,7 +93,7 @@
             {% if property_photos|length > 1 %}
             <div class="p-3 bg-dark bg-opacity-40 border-top border-secondary border-opacity-25 overflow-x-auto d-flex gap-2.5 no-scrollbar" style="scroll-behavior: smooth;">
                 {% for photo_url in property_photos %}
-                <img src="{{ photo_url }}" class="domria-thumb rounded-3 {% if forloop.first %}border-2 active-thumb{% else %}opacity-75{% endif %}" alt="Мініатюра {{ forloop.counter }}" style="width: 84px; height: 60px; object-fit: cover; cursor: pointer; transition: all 0.2s ease; border-radius: 10px; {% if forloop.first %}border: 2px solid var(--accent); opacity: 1;{% else %}border: 2px solid transparent;{% endif %}" onclick="goToSlide({{ forloop.counter0 }})" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600';">
+                <img src="{{ photo_url }}" class="domria-thumb rounded-3 {% if forloop.first %}border-2 active-thumb{% else %}opacity-75{% endif %}" alt="Мініатюра {{ forloop.counter }}" style="width: 84px; height: 60px; object-fit: cover; cursor: pointer; transition: all 0.2s ease; border-radius: 10px; {% if forloop.first %}border: 2px solid var(--accent); opacity: 1;{% else %}border: 2px solid transparent;{% endif %}" onclick="goToSlide({{ forloop.counter0 }})" onerror="this.onerror=null;this.src='{% static 'img/no-photo.svg' %}';">
                 {% endfor %}
             </div>
             {% endif %}
@@ -112,14 +113,14 @@
                     <div class="text-muted small font-weight-bold text-uppercase mb-1" style="letter-spacing: 0.05em; font-size: 0.75rem;">Вартість об'єкта</div>
                     {% if property.price %}
                     <div class="d-flex align-items-baseline gap-2">
-                        <span class="display-6 fw-bold" style="color: var(--text); font-weight: 800;">{{ property.price|floatformat:0 }} грн</span>
+                        <span class="display-6 fw-bold" style="color: var(--text); font-weight: 800;">{{ property.price|floatformat:"0g" }} грн</span>
                         {% if property.listing_type == 'rent' %}<span class="fs-5 text-muted font-weight-normal">/ місяць</span>{% endif %}
                     </div>
                     {% if property.price_usd %}
                     <div class="text-muted small mt-1" style="font-size: 0.9rem;">
-                        ≈ <strong>${{ property.price_usd|floatformat:0 }}</strong>
+                        ≈ <strong>${{ property.price_usd|floatformat:"0g" }}</strong>
                         {% if property.price_per_sqm %}
-                        · <span style="color: var(--accent); font-weight: 600;">{{ property.price_per_sqm|floatformat:0 }} грн/м²</span>
+                        · <span style="color: var(--accent); font-weight: 600;">{{ property.price_per_sqm|floatformat:"0g" }} грн/м²</span>
                         {% if property.price_per_sqm_usd %} (${{ property.price_per_sqm_usd|floatformat:0 }}/м²){% endif %}
                         {% endif %}
                     </div>
@@ -164,7 +165,33 @@
                         </div>
                         <div>
                             <div class="small text-muted" style="font-size: 0.8rem;">Площа</div>
-                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.area_sqm }} м²</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.area_sqm|floatformat:"-1" }} м²</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if property.floor %}
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 14.5h14v1H1zM2 9h4v5H2zm4-4h4v9H6zm4-4h4v13h-4z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Поверх</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.floor }}{% if property.total_floors %} з {{ property.total_floors }}{% endif %}</div>
+                        </div>
+                    </div>
+                </div>
+                {% elif property.total_floors %}
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 14.5h14v1H1zM2 9h4v5H2zm4-4h4v9H6zm4-4h4v13h-4z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Поверховість</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.total_floors }} пов.</div>
                         </div>
                     </div>
                 </div>
@@ -178,7 +205,7 @@
                         </div>
                         <div>
                             <div class="small text-muted" style="font-size: 0.8rem;">Ціна за 1 м²</div>
-                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.price_per_sqm|floatformat:0 }} грн</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.price_per_sqm|floatformat:"0g" }} грн</div>
                         </div>
                     </div>
                 </div>
@@ -246,11 +273,11 @@
                 <div class="property-detail-description fs-6 mb-4 p-4 p-md-5 rounded-4 shadow-sm" style="background: var(--bg-card); border: 1px solid var(--border) !important; color: var(--text); line-height: 1.75; border-radius: 16px; white-space: pre-line;">{{ property.description }}</div>
             {% endif %}
             
-            {% if property.features.exists %}
-                {% if property.features.all %}
+            {% with feats=property.features.all %}
+            {% if feats %}
                     <h2 class="h5 mt-4 mb-3 fw-bold" style="color: var(--text);">Зручності та оснащення</h2>
                     <div class="row g-3">
-                        {% regroup property.features.all|dictsort:"category" by get_category_display as cat_features %}
+                        {% regroup feats|dictsort:"category" by get_category_display as cat_features %}
                         {% for group in cat_features %}
                         <div class="col-12 col-md-6">
                             <div class="card p-4 h-100 border-0 shadow-sm" style="background: var(--bg-card); border: 1px solid var(--border) !important; border-radius: 16px;">
@@ -267,89 +294,44 @@
                         </div>
                         {% endfor %}
                     </div>
-                {% endif %}
             {% endif %}
+            {% endwith %}
 
-            <!-- Інтерактивна карта безбар'єрної інфраструктури (Радіус 500-1000м) -->
+            <!-- Розташування: лише реальні дані (місто/адреса), без вигаданих об'єктів поруч -->
             <div class="card p-4 mt-4 border-0 shadow-sm" style="background: var(--bg-card); border: 1px solid var(--border) !important; border-radius: 16px;">
-                <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
                     <div>
-                        <h2 class="h5 mb-1 fw-bold text-white">Безбар'єрна інфраструктура поруч</h2>
-                        <p class="text-muted small mb-0">Об'єкти доступності в радіусі 500–1000м навколо будинку</p>
+                        <h2 class="h5 mb-1 fw-bold" style="color: var(--text);">Розташування</h2>
+                        <p class="small mb-0" style="color: var(--text-muted);">{% if property.city %}{{ property.city }}, {% endif %}{{ property.address }}</p>
                     </div>
-                    <span class="badge bg-teal text-white px-3 py-1.5 rounded-pill" style="background: #0d9488;">Радіус 500м</span>
+                    <a class="btn btn-outline-primary btn-sm rounded-3" target="_blank" rel="noopener noreferrer"
+                       href="https://www.openstreetmap.org/search?query={{ map_query|urlencode }}">Знайти адресу на карті ↗</a>
                 </div>
-
-                <div id="poi-map" class="rounded-3 overflow-hidden shadow-sm" style="height: 320px; width: 100%; z-index: 1;"></div>
-
-                <div class="row g-2 mt-3 pt-2 border-top border-secondary border-opacity-25 small text-white">
-                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
-                        <span class="badge bg-success rounded-circle p-1">💊</span> Аптека з пандусом (250м)
-                    </div>
-                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
-                        <span class="badge bg-info rounded-circle p-1">🚌</span> Низькопідлоговий дуобус (180м)
-                    </div>
-                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
-                        <span class="badge bg-primary rounded-circle p-1">🛒</span> Безбар'єрний Сільпо (420м)
-                    </div>
-                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
-                        <span class="badge bg-warning text-dark rounded-circle p-1">♿</span> Інклюзивна парковка (50м)
-                    </div>
-                </div>
+                {% if map_center %}
+                <div id="poi-map" class="rounded-3 overflow-hidden shadow-sm" style="height: 300px; width: 100%; z-index: 1;" role="img" aria-label="Приблизне розташування: місто {{ property.city }}"></div>
+                <p class="small mt-2 mb-0" style="color: var(--text-muted);">На карті показано місто (приблизне розташування). Точну адресу уточнюйте у власника.</p>
+                {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- Leaflet JS Map Script for Nearby POIs -->
+    {% if map_center %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    {{ map_center|json_script:"map-center-data" }}
     <script>
     document.addEventListener("DOMContentLoaded", function() {
         var mapContainer = document.getElementById('poi-map');
-        if (!mapContainer) return;
-
-        // Kyiv coordinates default or simulated property location
-        var lat = 50.4501;
-        var lng = 30.5234;
-
-        var map = L.map('poi-map').setView([lat, lng], 15);
+        if (!mapContainer || typeof L === 'undefined') return;
+        var center = JSON.parse(document.getElementById('map-center-data').textContent);
+        var map = L.map('poi-map', { scrollWheelZoom: false }).setView(center, 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
+            attribution: '&copy; OpenStreetMap'
         }).addTo(map);
-
-        // Main Property Marker
-        var mainIcon = L.divIcon({
-            html: '<div style="background:#0d9488; color:#fff; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid #fff; font-weight:bold; box-shadow:0 4px 10px rgba(0,0,0,0.5);">🏠</div>',
-            className: ''
-        });
-        L.marker([lat, lng], {icon: mainIcon}).addTo(map).bindPopup("<b>{{ property.name|escapejs }}</b><br>Головний вхід").openPopup();
-
-        // 500m Radius Circle
-        L.circle([lat, lng], {
-            color: '#0d9488',
-            fillColor: '#0d9488',
-            fillOpacity: 0.15,
-            radius: 500
-        }).addTo(map);
-
-        // POI Markers
-        var pois = [
-            {lat: lat + 0.0018, lng: lng + 0.0022, title: "💊 Аптека «Бажаємо Здоров'я»", desc: "Пандус 6%, автоматичні двері (250м)"},
-            {lat: lat - 0.0012, lng: lng - 0.0015, title: "🚌 Зупинка тролейбуса №18", desc: "Низький підлоговий покрив (180м)"},
-            {lat: lat + 0.0028, lng: lng - 0.0030, title: "🛒 Сільпо", desc: "Нульовий поріг, ліфт на 2 поверх (420м)"},
-            {lat: lat - 0.0005, lng: lng + 0.0008, title: "♿ Інклюзивне паркомісце", desc: "Розширене паркомісце з розміткою 3.5м (50м)"}
-        ];
-
-        pois.forEach(function(poi) {
-            var poiIcon = L.divIcon({
-                html: '<div style="background:#0f172a; color:#38bdf8; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid #38bdf8; font-size:12px;">📍</div>',
-                className: ''
-            });
-            L.marker([poi.lat, poi.lng], {icon: poiIcon}).addTo(map)
-                .bindPopup("<b>" + poi.title + "</b><br>" + poi.desc);
-        });
+        L.circle(center, { color: '#0d9488', fillColor: '#0d9488', fillOpacity: 0.08, radius: 3000 }).addTo(map);
     });
     </script>
+    {% endif %}
     
     <!-- Права колонка: Sticky Sidebar Контактів (Симетрія та Єдиний Радіус 16px) -->
     <div class="col-lg-4">
@@ -363,7 +345,7 @@
                             {{ property.owner.username|make_list|first|upper }}
                         </div>
                         <div>
-                            <div class="fw-bold text-white mb-0.5" style="font-size: 1.08rem; letter-spacing: -0.01em;">{{ property.owner.username }}</div>
+                            <div class="fw-bold mb-0.5" style="color: var(--text); font-size: 1.08rem; letter-spacing: -0.01em;">{{ property.owner.username }}</div>
                             <div class="d-flex align-items-center gap-1.5 mt-1">
                                 <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 d-inline-flex align-items-center gap-1.5" style="font-size: 0.75rem; font-weight: 600;">
                                     <span style="font-size: 8px; line-height: 1;">●</span> Власник
@@ -375,7 +357,7 @@
                             🏠
                         </div>
                         <div>
-                            <div class="fw-bold text-white" style="font-size: 1.08rem;">Офіційний менеджер</div>
+                            <div class="fw-bold" style="color: var(--text); font-size: 1.08rem;">Офіційний менеджер</div>
                             <span class="text-muted small">Контакт платформи</span>
                         </div>
                         {% endif %}
@@ -544,7 +526,49 @@
         </div>
     </div>
 {% endif %}
+
+{% if similar_listings %}
+<section class="similar-listings mt-5" aria-labelledby="similar-title">
+    <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2 mb-3">
+        <h2 id="similar-title" class="h5 fw-bold mb-0" style="color: var(--text);">Схожі оголошення{% if property.city %} у місті {{ property.city }}{% endif %}</h2>
+        <a href="{% url 'properties:catalog' %}?type={{ property.listing_type }}{% if property.city %}&city={{ property.city|urlencode }}{% endif %}" class="small" style="color: var(--accent);">Усі в каталозі →</a>
+    </div>
+    <div class="similar-grid">
+        {% for item in similar_listings %}
+        <a href="{% url 'properties:property_detail' item.pk %}" class="similar-card text-decoration-none" style="color: inherit;">
+            <div class="similar-card__img">
+                <img src="{{ item.listing_photo_url }}" alt="{% if item.has_real_photo %}{{ item.name }}{% else %}Фото відсутнє{% endif %}" loading="lazy" class="{% if not item.has_real_photo %}is-placeholder{% endif %}" onerror="this.onerror=null;this.src='{% static 'img/no-photo.svg' %}';this.classList.add('is-placeholder');">
+                {% if item.photo_count > 1 %}<span class="similar-card__count">📷 {{ item.photo_count }}</span>{% endif %}
+            </div>
+            <div class="similar-card__body">
+                <div class="similar-card__price">{% if item.price %}{{ item.price|floatformat:"0g" }} грн{% if item.listing_type == 'rent' %}<span class="small text-muted">/міс</span>{% endif %}{% else %}Ціна за домовленістю{% endif %}</div>
+                <div class="similar-card__specs">
+                    {% if item.rooms %}{{ item.rooms }} кімн.{% endif %}{% if item.area_sqm %} · {{ item.area_sqm|floatformat:"-1" }} м²{% endif %}{% if item.floor %} · {{ item.floor }}{% if item.total_floors %}/{{ item.total_floors }}{% endif %} пов.{% endif %}
+                </div>
+                <div class="similar-card__title text-truncate">{{ item.name }}</div>
+                <div class="similar-card__addr text-truncate">{{ item.address }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 </div><!-- .wrap -->
+
+<style>
+.similar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+.similar-card { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--bg-card); transition: box-shadow .15s ease, transform .15s ease; }
+.similar-card:hover, .similar-card:focus-visible { box-shadow: 0 8px 24px rgba(15, 23, 42, .12); transform: translateY(-2px); }
+.similar-card__img { position: relative; aspect-ratio: 4 / 3; background: #e5e7eb; }
+.similar-card__img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.similar-card__img img.is-placeholder { object-fit: contain; }
+.similar-card__count { position: absolute; right: .5rem; top: .5rem; background: rgba(15, 23, 42, .72); color: #fff; font-size: .72rem; font-weight: 600; padding: .15rem .5rem; border-radius: 999px; }
+.similar-card__body { padding: .75rem .85rem .9rem; display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.similar-card__price { font-weight: 800; font-size: 1.05rem; color: var(--text); }
+.similar-card__specs { font-size: .85rem; color: var(--text); }
+.similar-card__title { font-size: .85rem; color: var(--text-muted); }
+.similar-card__addr { font-size: .8rem; color: var(--text-muted); }
+</style>
 
 <!-- Повноекранний Lightbox Modal для фото перегляду -->
 <div class="modal fade" id="lightboxModal" tabindex="-1" aria-hidden="true">
@@ -667,4 +691,31 @@ function trackPhoneClick(id) {
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .cursor-pointer { cursor: pointer; }
 </style>
+{% if user.is_authenticated %}
+<script>
+(function() {
+    var btn = document.querySelector('.btn-favorite[data-property-pk]');
+    if (!btn) return;
+    var text = btn.querySelector('.btn-favorite-text');
+    function render(isFav) {
+        btn.dataset.inFavorites = isFav ? 'true' : 'false';
+        btn.classList.toggle('btn-favorite--active', isFav);
+        btn.setAttribute('aria-pressed', isFav ? 'true' : 'false');
+        if (text) text.textContent = isFav ? 'В обраному' : 'В обране';
+    }
+    render(btn.dataset.inFavorites === 'true');
+    btn.addEventListener('click', function() {
+        btn.disabled = true;
+        fetch("{% url 'properties:toggle_favorite' property.pk %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': "{{ csrf_token }}", 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        }).then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function(data) { render(!!data.is_favorite); })
+          .catch(function() { alert('Не вдалося оновити обране. Спробуйте ще раз.'); })
+          .finally(function() { btn.disabled = false; });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -355,7 +355,10 @@ def home(request):
         city_name = (c["city"] or "").strip()
         if not city_name:
             continue
-        coords = CITY_COORDINATES.get(city_name, (50.45, 30.52))
+        coords = CITY_COORDINATES.get(city_name)
+        if coords is None:
+            # Немає координат міста — не ставимо маркер у випадкове місце (раніше — центр Києва).
+            continue
         all_map_cities.append(
             {
                 "city": city_name,
@@ -434,63 +437,81 @@ def accessibility_levels(request):
     return render(request, "properties/accessibility_levels.html", context)
 
 
-# Набір URL фото з інтернету для галереї оголошень (різні для кожного оголошення)
-PROPERTY_PHOTO_URLS = [
-    "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200",
-    "https://images.unsplash.com/photo-1560185127-6a1896df2b2b?w=1200",
-    "https://images.unsplash.com/photo-1600587644522-953f4752d2e5?w=1200",
-    "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1200",
-    "https://images.unsplash.com/photo-1600573472592-401b489a3cdc?w=1200",
-    "https://images.unsplash.com/photo-1600587644345-507b8c9d32e2?w=1200",
-    "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=1200",
-    "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200",
-    "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1200",
-    "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200",
-    "https://images.unsplash.com/photo-1600210962194-94d6f9102ec2?w=1200",
-    "https://images.unsplash.com/photo-1484155274-0aad75c6e91e?w=1200",
-    "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=1200",
-    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200",
-    "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
-]
+# Нейтральна заглушка для оголошень без фото (жодних «чужих» фотографій квартир).
+NO_PHOTO_STATIC_PATH = "img/no-photo.svg"
 
 
-def _property_photos_for_pk(pk):
-    """Повертає 3 різні URL фото для оголошення з заданим pk."""
-    n = len(PROPERTY_PHOTO_URLS)
-    return [
-        PROPERTY_PHOTO_URLS[pk % n],
-        PROPERTY_PHOTO_URLS[(pk + 1) % n],
-        PROPERTY_PHOTO_URLS[(pk + 2) % n],
-    ]
+def _no_photo_url():
+    from django.templatetags.static import static
+
+    return static(NO_PHOTO_STATIC_PATH)
+
+
+def _safe_url(field):
+    try:
+        return field.url if field else None
+    except ValueError:
+        return None
+
+
+def _property_photo_urls(prop):
+    """Усі реальні фото оголошення: головне + галерея (без дублікатів), у порядку показу."""
+    urls = []
+    main = _safe_url(prop.photo)
+    if main:
+        urls.append(main)
+    for extra in prop.extra_photos.all():
+        url = _safe_url(extra.image)
+        if url and url not in urls:
+            urls.append(url)
+    return urls
 
 
 def _assign_listing_photo_urls(properties):
-    """Додає кожному оголошенню атрибут listing_photo_url: своє фото, додаткове фото або placeholder."""
-    n = len(PROPERTY_PHOTO_URLS)
+    """
+    Для карток: listing_photo_url — перше реальне фото або нейтральна заглушка;
+    has_real_photo та photo_count — для бейджа кількості фото.
+    """
+    placeholder = _no_photo_url()
     for p in properties:
-        photo_url = None
-        if p.photo:
-            try:
-                photo_url = p.photo.url
-            except Exception:
-                photo_url = None
-        if not photo_url:
-            extras = getattr(p, "extra_photos", None)
-            extras_list = list(extras.all()) if extras else []
-            first_extra = extras_list[0] if extras_list else None
-            if first_extra and first_extra.image:
-                try:
-                    photo_url = first_extra.image.url
-                except Exception:
-                    photo_url = None
-        if not photo_url:
-            photo_url = PROPERTY_PHOTO_URLS[p.pk % n]
-        p.listing_photo_url = photo_url
+        urls = _property_photo_urls(p)
+        p.has_real_photo = bool(urls)
+        p.photo_count = len(urls)
+        p.listing_photo_url = urls[0] if urls else placeholder
+
+
+SIMILAR_LISTINGS_LIMIT = 4
+
+
+def _similar_listings(prop):
+    """Схожі публічні оголошення: те саме місто й тип; найближчі за кількістю кімнат, потім нові."""
+    qs = (
+        Property.objects.public()
+        .exclude(pk=prop.pk)
+        .filter(listing_type=prop.listing_type)
+        .select_related("audit")
+        .prefetch_related("extra_photos")
+    )
+    if prop.city:
+        qs = qs.filter(city=prop.city)
+    if prop.rooms:
+        qs = qs.annotate(
+            same_rooms=Case(When(rooms=prop.rooms, then=Value(1)), default=Value(0),
+                            output_field=IntegerField())
+        ).order_by("-same_rooms", "-created_at")
+    else:
+        qs = qs.order_by("-created_at")
+    similar = list(qs[:SIMILAR_LISTINGS_LIMIT])
+    _assign_listing_photo_urls(similar)
+    return similar
 
 
 def property_detail(request, pk):
     """Сторінка об'єкта: повна інформація та результати аудиту. Фото: головне + додаткові; якщо немає — placeholder."""
-    prop = get_object_or_404(Property.objects.prefetch_related("features", "extra_photos"), pk=pk)
+    prop = get_object_or_404(
+        Property.objects.select_related("owner", "audit").prefetch_related("features", "extra_photos"),
+        pk=pk,
+    )
 
     # Неперевірені оголошення (або ті, що не пройшли фотоперевірку) доступні лише власнику або адмінам
     is_owner_or_staff = request.user.is_authenticated and (
@@ -513,20 +534,7 @@ def property_detail(request, pk):
         prop.view_count = (prop.view_count or 0) + 1
         prop.save(update_fields=["view_count"])
         request.session[session_key] = True
-    property_photos = []
-    if prop.photo:
-        try:
-            property_photos.append(prop.photo.url)
-        except Exception:
-            pass
-    for p in prop.extra_photos.all():
-        if p.image:
-            try:
-                property_photos.append(p.image.url)
-            except Exception:
-                pass
-    if not property_photos:
-        property_photos = _property_photos_for_pk(prop.pk)
+    property_photos = _property_photo_urls(prop)
 
     now = timezone.now()
     # Стара система ТОП: продаж припинено; лише показ чинного ТОП до його завершення.
@@ -589,6 +597,10 @@ def property_detail(request, pk):
         "property_photos": property_photos,
         "featured_until_display": featured_until_display,
         "is_favorite": is_favorite,
+        "similar_listings": _similar_listings(prop),
+        # Координати лише рівня міста (геокодування адреси немає) — показуються як приблизні.
+        "map_center": list(CITY_COORDINATES[prop.city]) if prop.city in CITY_COORDINATES else None,
+        "map_query": ", ".join(x for x in (prop.address, prop.city, "Україна") if x),
     }
     return render(request, "properties/property_detail.html", context)
 
@@ -810,9 +822,8 @@ def add_listing(request):
             prop.owner = request.user
             prop.save()
             form.save_m2m()
-            for i, f in enumerate(request.FILES.getlist("extra_photos")):
-                if f:
-                    PropertyPhoto.objects.create(property=prop, image=f, order=i)
+            for i, f in enumerate(form.cleaned_extra_photos):
+                PropertyPhoto.objects.create(property=prop, image=f, order=i)
             messages.success(request, "Оголошення збережено. Оберіть спосіб публікації.")
             return redirect("properties:payment", pk=prop.pk)
         else:
@@ -1265,8 +1276,9 @@ def compare_properties(request):
             _visible_properties(request.user)
             .filter(id__in=property_ids)
             .select_related("audit")
-            .prefetch_related("features")[:4]
+            .prefetch_related("features", "extra_photos")[:4]
         )
+        _assign_listing_photo_urls(properties)
 
     context = {
         "properties": properties,
@@ -1283,19 +1295,7 @@ def quick_view_api(request, pk):
         _visible_properties(request.user).select_related("audit").prefetch_related("extra_photos"),
         pk=pk,
     )
-    _assign_listing_photo_urls([prop])
-
-    photos = []
-    if prop.photo:
-        try:
-            photos.append(prop.photo.url)
-        except Exception:
-            pass
-    for photo in prop.extra_photos.all():
-        if photo.image and photo.image.url not in photos:
-            photos.append(photo.image.url)
-    if not photos and getattr(prop, "listing_photo_url", None):
-        photos.append(prop.listing_photo_url)
+    photos = _property_photo_urls(prop)
 
     audit_score = prop.audit.total_score if hasattr(prop, "audit") and prop.audit else None
 
@@ -1308,8 +1308,8 @@ def quick_view_api(request, pk):
         "address": prop.address or "",
         "rooms": prop.rooms or "—",
         "area_sqm": prop.area_sqm or "—",
-        "floor": getattr(prop, "floor", None) or "—",
-        "total_floors": getattr(prop, "total_floors", None) or "—",
+        "floor": prop.floor or "—",
+        "total_floors": prop.total_floors or "—",
         "mobility_level": prop.mobility_level,
         "photos": photos,
         "audit_score": audit_score,

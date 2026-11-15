@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500" role="img" aria-label="Фото відсутнє">
+  <rect width="800" height="500" fill="#e5e7eb"/>
+  <g fill="none" stroke="#9ca3af" stroke-width="10" stroke-linejoin="round" stroke-linecap="round" transform="translate(320 165)">
+    <path d="M10 70 L80 15 L150 70"/>
+    <path d="M28 58 V140 H132 V58"/>
+    <rect x="64" y="92" width="32" height="48"/>
+  </g>
+  <text x="400" y="360" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="30" fill="#6b7280">Фото відсутнє</text>
+</svg>

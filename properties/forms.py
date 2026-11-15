@@ -5,6 +5,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
+from django.core.validators import MaxValueValidator, MinValueValidator
 
 from .mobility import MOBILITY_LEVELS
 from .models import AccessibilityAudit, Property
@@ -59,6 +60,8 @@ class AddListingForm(forms.ModelForm):
             "price",
             "rooms",
             "area_sqm",
+            "floor",
+            "total_floors",
             "description",
             "photo",
             "mobility_level",
@@ -81,6 +84,12 @@ class AddListingForm(forms.ModelForm):
             "area_sqm": forms.NumberInput(
                 attrs={"class": "form-control", "placeholder": "м²", "min": 1, "step": 0.1}
             ),
+            "floor": forms.NumberInput(
+                attrs={"class": "form-control", "placeholder": "—", "min": 1, "max": 200}
+            ),
+            "total_floors": forms.NumberInput(
+                attrs={"class": "form-control", "placeholder": "—", "min": 1, "max": 200}
+            ),
             "description": forms.Textarea(
                 attrs={"class": "form-control", "rows": 4, "placeholder": "Опис"}
             ),
@@ -91,9 +100,38 @@ class AddListingForm(forms.ModelForm):
             "features": forms.CheckboxSelectMultiple(attrs={"class": "form-check-input"}),
         }
 
+    MAX_EXTRA_PHOTOS = 20
+    MAX_PHOTO_BYTES = 10 * 1024 * 1024
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["photo"].required = True
+        for name in ("floor", "total_floors"):
+            self.fields[name].min_value = 1
+            self.fields[name].validators.append(MinValueValidator(1))
+            self.fields[name].validators.append(MaxValueValidator(200))
+        self.cleaned_extra_photos = []
+
+    def clean(self):
+        cleaned = super().clean()
+        floor, total = cleaned.get("floor"), cleaned.get("total_floors")
+        if floor and total and floor > total:
+            self.add_error("floor", "Поверх не може бути більшим за кількість поверхів у будинку.")
+
+        files = [f for f in self.files.getlist("extra_photos") if f] if self.files else []
+        if len(files) > self.MAX_EXTRA_PHOTOS:
+            raise forms.ValidationError(f"Можна додати не більше {self.MAX_EXTRA_PHOTOS} додаткових фото.")
+        checker = forms.ImageField()
+        valid = []
+        for f in files:
+            if f.size > self.MAX_PHOTO_BYTES:
+                raise forms.ValidationError(f"Фото «{f.name}» більше 10 МБ.")
+            try:
+                valid.append(checker.clean(f))
+            except forms.ValidationError:
+                raise forms.ValidationError(f"Файл «{f.name}» не є коректним зображенням.")
+        self.cleaned_extra_photos = valid
+        return cleaned
 
     def full_clean(self):
         super().full_clean()
@@ -111,6 +149,8 @@ class AddListingForm(forms.ModelForm):
             raise forms.ValidationError(
                 "Додайте хоча б одне фото оголошення. Розміщення без фото заборонено."
             )
+        if getattr(photo, "size", 0) > self.MAX_PHOTO_BYTES:
+            raise forms.ValidationError("Головне фото більше 10 МБ.")
         return photo
 
     def clean_mobility_level(self):

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}Каталог — mobi Home{% endblock %}
 
 {% block content %}
@@ -203,11 +204,10 @@
             <a href="{% url 'properties:property_detail' prop.pk %}" class="text-decoration-none d-block h-100" style="color: inherit;">
                 <div class="card card-premium listing-card h-100 border-0 overflow-hidden">
                     <div class="listing-card-img-wrap position-relative overflow-hidden">
-                    {% if prop.photo %}
-                        <img src="{{ prop.photo.url }}" class="card-img-top w-100 h-100 object-fit-cover" alt="{{ prop.name }}" loading="lazy" onerror="this.onerror=null;this.src='{{ prop.listing_photo_url }}';">
-                    {% else %}
-                        <img src="{{ prop.listing_photo_url }}" class="card-img-top w-100 h-100 object-fit-cover" alt="Фото квартири — {{ prop.name }}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600';">
-                    {% endif %}
+                        <img src="{{ prop.listing_photo_url }}" class="card-img-top w-100 h-100 object-fit-cover{% if not prop.has_real_photo %} listing-card-img--placeholder{% endif %}" alt="{% if prop.has_real_photo %}Фото квартири — {{ prop.name }}{% else %}Фото відсутнє{% endif %}" loading="lazy" onerror="this.onerror=null;this.src='{% static 'img/no-photo.svg' %}';this.classList.add('listing-card-img--placeholder');">
+                        {% if prop.photo_count > 1 %}
+                        <span class="listing-card-photo-count" aria-label="Фото: {{ prop.photo_count }}">📷 {{ prop.photo_count }}</span>
+                        {% endif %}
                         <div class="position-absolute top-0 start-0 listing-card-badges">
                             <span class="listing-badge {% if prop.listing_type == 'sale' %}listing-badge--sale{% else %}listing-badge--rent{% endif %}">{{ prop.get_listing_type_display }}</span>
                             {% if prop.is_verified_by_admin %}<span class="listing-badge listing-badge--verified"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-check-circle-fill me-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>Перевірено</span>{% endif %}
@@ -226,11 +226,11 @@
                         {% if prop.price %}
                         <div class="listing-card-price-overlay">
                             <h3 class="listing-card-price mb-0 text-white">
-                                {{ prop.price|floatformat:0 }} грн{% if prop.listing_type == 'rent' %}<span class="listing-card-price-period">/міс</span>{% endif %}
+                                {{ prop.price|floatformat:"0g" }} грн{% if prop.listing_type == 'rent' %}<span class="listing-card-price-period">/міс</span>{% endif %}
                             </h3>
                             {% if prop.price_per_sqm %}
                             <div class="listing-card-price-meta text-white-50">
-                                <span>{{ prop.price_per_sqm|floatformat:0 }} грн/м²</span>
+                                <span>{{ prop.price_per_sqm|floatformat:"0g" }} грн/м²</span>
                                 {% if prop.price_per_sqm_usd %}<span class="listing-card-price-meta-usd">${{ prop.price_per_sqm_usd|floatformat:0 }}/м²</span>{% endif %}
                             </div>
                             {% endif %}
@@ -255,23 +255,32 @@
                             {% if prop.area_sqm %}
                             <div class="d-flex align-items-center gap-1">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-bounding-box" viewBox="0 0 16 16"><path d="M5 2V0H0v5h2v6H0v5h5v-2h6v2h5v-5h-2V5h2V0h-5v2H5zm6 1v2h2v6h-2v2H5v-2H3V5h2V3h6zm1-2h3v3h-3V1zm3 11v3h-3v-3h3zM4 15H1v-3h3v3zM1 4V1h3v3H1z"/></svg>
-                                <span>{{ prop.area_sqm }} м²</span>
+                                <span>{{ prop.area_sqm|floatformat:"-1" }} м²</span>
+                            </div>
+                            {% endif %}
+                            {% if prop.floor %}
+                            <div class="d-flex align-items-center gap-1" title="Поверх">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 14.5h14v1H1zM2 9h4v5H2zm4-4h4v9H6zm4-4h4v13h-4z" fill-opacity=".85"/></svg>
+                                <span>{{ prop.floor }}{% if prop.total_floors %}/{{ prop.total_floors }}{% endif %} пов.</span>
                             </div>
                             {% endif %}
                         </div>
+                        {% if prop.description %}
+                        <p class="listing-card-desc small mb-3">{{ prop.description|truncatechars:120 }}</p>
+                        {% endif %}
 
+                        {% with feats=prop.features.all %}
+                        {% if feats %}
                         <div class="listing-card-features small text-muted mb-3 d-flex flex-wrap gap-1">
-                            {% if prop.features.exists %}
-                                {% for f in prop.features.all|slice:":3" %}
-                                    <span class="listing-feature-chip">{{ f.name }}</span>
-                                {% endfor %}
-                                {% if prop.features.count > 3 %}
-                                    <span class="listing-feature-chip">+{{ prop.features.count|add:"-3" }}</span>
-                                {% endif %}
-                            {% else %}
-                                <span>Зручності в описі</span>
+                            {% for f in feats|slice:":3" %}
+                                <span class="listing-feature-chip">{{ f.name }}</span>
+                            {% endfor %}
+                            {% if feats|length > 3 %}
+                                <span class="listing-feature-chip">+{{ feats|length|add:"-3" }}</span>
                             {% endif %}
                         </div>
+                        {% endif %}
+                        {% endwith %}
                         
                         <div class="mt-auto pt-3 listing-card-actions">
                             <button type="button" class="btn btn-sm rounded-3 compare-btn-card listing-card-btn d-inline-flex align-items-center justify-content-center gap-1.5" data-prop-id="{{ prop.id }}" onclick="event.preventDefault(); toggleCompare({{ prop.id }});">
@@ -280,10 +289,10 @@
                             <button type="button" class="btn btn-sm rounded-3 listing-card-btn listing-card-btn--view d-inline-flex align-items-center justify-content-center gap-1.5"
                                 data-id="{{ prop.id }}"
                                 data-name="{{ prop.name|escape }}"
-                                data-price="{% if prop.price %}{{ prop.price|floatformat:0 }}{% else %}—{% endif %}"
+                                data-price="{% if prop.price %}{{ prop.price|floatformat:"0g" }}{% else %}—{% endif %}"
                                 data-city="{{ prop.city|default:'' }}"
                                 data-address="{{ prop.address|default:'' }}"
-                                data-photo="{{ prop.listing_photo_url|default:'' }}"
+                                data-photo="{% if prop.has_real_photo %}{{ prop.listing_photo_url }}{% endif %}"
                                 data-audit="{% if prop.audit %}{{ prop.audit.total_score|floatformat:0 }}{% endif %}"
                                 data-mobility="{{ prop.mobility_level|default:'' }}"
                                 data-rooms="{{ prop.rooms|default:'' }}"
@@ -641,6 +650,16 @@
     background: rgba(15, 23, 42, 0.55);
     color: #34d399;
     border-color: rgba(52, 211, 153, 0.35);
+}
+.listing-card-img--placeholder { object-fit: cover !important; object-position: center 30%; background: #e5e7eb; }
+.listing-card-photo-count {
+    position: absolute; right: 0.6rem; top: 0.6rem; z-index: 2;
+    background: rgba(15, 23, 42, 0.72); color: #fff; font-size: 0.75rem; font-weight: 600;
+    padding: 0.2rem 0.55rem; border-radius: 999px; backdrop-filter: blur(4px);
+}
+.listing-card-desc {
+    color: var(--text-muted); line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .listing-card .listing-badge--featured {
     background: rgba(183, 167, 152, 0.55);
