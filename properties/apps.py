@@ -11,4 +11,4 @@ class PropertiesConfig(AppConfig):
     # при кожному старті — це обходило модерацію і ламало розгортання.
 
     def ready(self):
-        from . import signals  # noqa: F401
+        from . import checks, signals  # noqa: F401

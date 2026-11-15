@@ -190,11 +190,29 @@ TELEGRAM_BOT_NAME = os.environ.get("TELEGRAM_BOT_NAME", "")
 # Дія: тимчасово вимкнено до появи справжньої інтеграції.
 DIIA_ENABLED = False
 
-# Оплата: вимкнено, доки не підключено LiqPay (Етап 2).
-PAYMENTS_ENABLED = False
-# Каталог показує лише оголошення з оплаченим розміщенням (placement_until > now).
-# Вмикається разом із запуском оплати; до того — поведінка як раніше.
+# --- Оплата розміщення (LiqPay) ---
+# Два незалежні перемикачі з різним призначенням (див. .env.example):
+#   PAYMENTS_ENABLED           — користувачі МОЖУТЬ оплатити розміщення (працює checkout).
+#                                Фактично активний лише якщо LiqPay коректно налаштовано.
+#   PLACEMENT_PAYMENT_REQUIRED — каталог ПОКАЗУЄ лише оплачені оголошення.
+#                                Не можна вмикати без PAYMENTS_ENABLED (перевіряється system check).
+PAYMENTS_ENABLED = env_bool("PAYMENTS_ENABLED", False)
 PLACEMENT_PAYMENT_REQUIRED = env_bool("PLACEMENT_PAYMENT_REQUIRED", False)
+
+LIQPAY_PUBLIC_KEY = os.environ.get("LIQPAY_PUBLIC_KEY", "")
+LIQPAY_PRIVATE_KEY = os.environ.get("LIQPAY_PRIVATE_KEY", "")
+# True — тестовий режим (ключі sandbox_*, статус «sandbox» приймається). False — бойовий.
+LIQPAY_SANDBOX = env_bool("LIQPAY_SANDBOX", True)
+# Актуальна документація LiqPay: version=7, підпис base64(sha3-256(private+data+private)).
+# Старі приклади/SDK: version=3 + sha1. Перемикається лише за результатами sandbox-перевірки.
+LIQPAY_API_VERSION = int(os.environ.get("LIQPAY_API_VERSION", "7"))
+LIQPAY_SIGNATURE_ALGORITHM = os.environ.get("LIQPAY_SIGNATURE_ALGORITHM", "sha3_256")
+LIQPAY_CHECKOUT_URL = "https://www.liqpay.ua/api/3/checkout"
+LIQPAY_API_URL = "https://www.liqpay.ua/api/request"
+# Скільки хвилин дається на завершення оплати (expired_date для LiqPay).
+LIQPAY_PAYMENT_TTL_MINUTES = int(os.environ.get("LIQPAY_PAYMENT_TTL_MINUTES", "60"))
+# Публічна адреса сайту (https://домен) для server_url/result_url.
+SITE_URL = os.environ.get("SITE_URL", "").rstrip("/")
 
 # Обмеження спроб входу
 LOGIN_THROTTLE_MAX_ATTEMPTS = int(os.environ.get("LOGIN_THROTTLE_MAX_ATTEMPTS", "5"))

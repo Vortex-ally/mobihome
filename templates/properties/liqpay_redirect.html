@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Перехід до оплати — mobi Home{% endblock %}
+
+{% block content %}
+<div class="wrap py-5 text-center" style="max-width: 560px;">
+    <h1 class="h4 mb-3" style="color: var(--text);">Перехід до оплати LiqPay</h1>
+    <p class="mb-1" style="color: var(--text);">{{ payment.tariff_name }}: <strong>{{ payment.amount|floatformat:"0g" }} {{ payment.currency }}</strong> за {{ payment.duration_days }} днів.</p>
+    <p class="small mb-4" style="color: var(--text-muted);">Дані картки вводяться лише на захищеній сторінці LiqPay. Наш сайт їх не отримує і не зберігає.</p>
+    {% if payment.is_test %}<p class="small mb-4"><span class="badge text-bg-warning">Тестовий режим: реальні кошти не списуються</span></p>{% endif %}
+    {# Поля data/signature сформовані сервером; зміна суми в браузері зламає підпис. #}
+    <form id="liqpay-form" method="post" action="{{ checkout.url }}" accept-charset="utf-8">
+        <input type="hidden" name="data" value="{{ checkout.data }}">
+        <input type="hidden" name="signature" value="{{ checkout.signature }}">
+        <button type="submit" class="btn btn-primary px-4 py-2">Перейти до оплати</button>
+    </form>
+    <p class="small mt-4 mb-0"><a href="{% url 'properties:payment_result' payment.order_id %}" style="color: var(--text-muted);">Повернутися без оплати</a></p>
+</div>
+<script>
+    // Автоматичний перехід; кнопка залишається як запасний варіант (без JS).
+    window.addEventListener('load', function () { document.getElementById('liqpay-form').submit(); });
+</script>
+{% endblock %}

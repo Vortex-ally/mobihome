@@ -429,6 +429,11 @@
                     <div class="mt-4 pt-3 border-top" style="border-color: var(--border) !important;">
                         <div class="small text-muted font-weight-semibold mb-2" style="font-size: 0.78rem;">Керування оголошенням:</div>
                         <div class="d-flex flex-column gap-2">
+                            {% if not property.archived_at %}
+                            <a href="{% url 'properties:payment' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: var(--bg); font-size: 0.85rem; color: var(--text); font-weight: 500; border: 1px solid var(--border);">
+                                💳 <span style="color: var(--text);">{% if property.placement_active %}Розміщено до {{ property.placement_until|date:"d.m.Y" }} · продовжити{% else %}Публікація та оплата{% endif %}</span>
+                            </a>
+                            {% endif %}
                             {% if user.is_staff %}
                             <a href="{% url 'properties:auditor_form' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: var(--bg); font-size: 0.85rem; color: var(--text); font-weight: 500; border: 1px solid var(--border);">
                                 🛡️ <span style="color: var(--text);">Редагувати аудит</span>

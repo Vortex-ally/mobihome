@@ -420,6 +420,9 @@
                         <span class="badge profile-badge profile-badge--draft">Чернетка</span>
                     {% endif %}
                     {% if prop.city %}<span class="text-muted small ms-2">{{ prop.city }}</span>{% endif %}
+                    {% if prop.placement_until %}
+                    <span class="small ms-2" style="color: var(--text-muted);">{% if prop.placement_active %}Розміщено до {{ prop.placement_until|date:"d.m.Y" }}{% else %}Розміщення завершилось {{ prop.placement_until|date:"d.m.Y" }}{% endif %}</span>
+                    {% endif %}
                 </span>
             </div>
         </a>
@@ -437,9 +440,51 @@
     </div>
     {% endif %}
 </section>
+
+<section class="profile-payments mb-4" aria-labelledby="payments-title">
+    <h2 id="payments-title" class="profile-section-title mb-3">Історія платежів</h2>
+    {% if user_payments %}
+    <div class="card card-premium">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0 profile-payments-table">
+                <thead>
+                    <tr><th>Дата</th><th>Оголошення</th><th>Сума</th><th>Статус</th><th>Період</th></tr>
+                </thead>
+                <tbody>
+                {% for pay in user_payments %}
+                    <tr>
+                        <td class="text-nowrap">{{ pay.created_at|date:"d.m.Y H:i" }}</td>
+                        <td><a href="{% url 'properties:property_detail' pay.property_id %}">{{ pay.property.name|truncatechars:40 }}</a></td>
+                        <td class="text-nowrap">{{ pay.amount|floatformat:"2g" }} {{ pay.currency }}</td>
+                        <td>
+                            <a href="{% url 'properties:payment_result' pay.order_id %}" class="badge profile-badge payment-status payment-status--{{ pay.status }}">{{ pay.get_status_display }}</a>
+                            {% if pay.is_test %}<span class="badge text-bg-secondary ms-1" title="Тестовий режим LiqPay">тест</span>{% endif %}
+                        </td>
+                        <td class="text-nowrap small">
+                            {% if pay.period_start %}{{ pay.period_start|date:"d.m.Y" }} – {{ pay.period_end|date:"d.m.Y" }}
+                            {% elif pay.status == 'success' %}Почнеться після публікації
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">Платежів ще не було.</p>
+    {% endif %}
+</section>
 </div>
 
 <style>
+.profile-payments-table th { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
+.profile-payments-table td { font-size: 0.875rem; color: var(--text); }
+.payment-status { text-decoration: none; }
+.payment-status--success { background: rgba(25, 135, 84, 0.15); color: #198754; }
+.payment-status--failure, .payment-status--expired, .payment-status--cancelled { background: rgba(220, 53, 69, 0.12); color: #b02a37; }
+.payment-status--created, .payment-status--pending { background: rgba(245, 158, 11, 0.18); color: #b45309; }
+.payment-status--reversed { background: var(--accent-soft); color: var(--accent); }
 .profile-page { max-width: 980px; }
 .profile-header-inner { background: linear-gradient(135deg, var(--section-alt) 0%, var(--bg-card) 100%); border-radius: 0; }
 [data-theme="dark"] .profile-header-inner { background: linear-gradient(135deg, var(--section-alt) 0%, var(--bg-card) 100%); }

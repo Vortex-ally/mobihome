@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Стан оплати — mobi Home{% endblock %}
+
+{% block content %}
+{% if is_pending %}<meta http-equiv="refresh" content="10">{% endif %}
+<div class="wrap py-5" style="max-width: 640px;">
+    <h1 class="h4 mb-3" style="color: var(--text);">Стан оплати</h1>
+    <div class="card card-premium card-body">
+        <p class="mb-2" style="color: var(--text);">Оголошення: <a href="{% url 'properties:property_detail' property.pk %}">{{ property.name }}</a></p>
+        <p class="mb-2" style="color: var(--text);">Сума: <strong>{{ payment.amount|floatformat:"2g" }} {{ payment.currency }}</strong> · Замовлення <code>{{ payment.order_id }}</code></p>
+        {% if payment.is_test %}<p class="mb-2"><span class="badge text-bg-warning">Тестовий режим</span></p>{% endif %}
+
+        {% if payment.status == 'success' %}
+            <div class="alert alert-success mb-0">
+                <strong>Оплату підтверджено LiqPay.</strong>
+                {% if payment.period_start %}
+                    Розміщення діє з {{ payment.period_start|date:"d.m.Y H:i" }} до {{ payment.period_end|date:"d.m.Y H:i" }}.
+                {% else %}
+                    30 днів розміщення почнуться з моменту публікації після модерації.
+                {% endif %}
+            </div>
+        {% elif payment.status == 'failure' %}
+            <div class="alert alert-danger mb-0"><strong>Оплату відхилено.</strong> Кошти не списано. Спробуйте ще раз або іншою карткою.</div>
+        {% elif payment.status == 'cancelled' %}
+            <div class="alert alert-secondary mb-0">Оплату скасовано.</div>
+        {% elif payment.status == 'expired' %}
+            <div class="alert alert-secondary mb-0">Оплату не було завершено вчасно.</div>
+        {% elif payment.status == 'reversed' %}
+            <div class="alert alert-info mb-0">Кошти за цим платежем повернено.</div>
+        {% else %}
+            <div class="alert alert-warning mb-0">
+                <strong>Очікуємо підтвердження від LiqPay.</strong>
+                Повернення на цю сторінку ще не означає, що оплату завершено. Сторінка оновиться автоматично.
+                {% if payment.error_message %}<div class="small mt-2">{{ payment.error_message }}</div>{% endif %}
+            </div>
+        {% endif %}
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-4">
+        <a href="{% url 'properties:payment' property.pk %}" class="btn btn-outline-secondary">До оплати оголошення</a>
+        <a href="{% url 'properties:profile' %}" class="btn btn-outline-secondary">Мої платежі</a>
+        {% if is_pending %}
+        <form method="post" action="{% url 'properties:cancel_payment' payment.order_id %}">{% csrf_token %}
+            <button type="submit" class="btn btn-link text-danger">Скасувати оплату</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

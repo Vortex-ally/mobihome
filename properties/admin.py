@@ -428,9 +428,9 @@ class PaymentEventInline(admin.TabularInline):
 class PaymentAdmin(admin.ModelAdmin):
     """Фінансові записи: лише перегляд. Статус змінюється тільки підтвердженням провайдера."""
 
-    list_display = ("order_id", "status", "property_link", "user_display", "amount", "currency",
+    list_display = ("order_id", "status", "is_test", "property_link", "user_display", "amount", "currency",
                     "paid_amount", "paid_at", "period_end", "created_at")
-    list_filter = ("status", "provider", "currency", "created_at", "paid_at")
+    list_filter = ("status", "is_test", "provider", "currency", "created_at", "paid_at")
     search_fields = ("order_id", "provider_transaction_id", "user__username", "user__email",
                      "user_snapshot", "property__name", "=property__id")
     list_select_related = ("property", "user", "tariff")

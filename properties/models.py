@@ -814,6 +814,10 @@ class Payment(models.Model):
 
     order_id = models.CharField("Номер замовлення", max_length=64, unique=True)
     provider = models.CharField("Платіжний провайдер", max_length=20, default="liqpay")
+    is_test = models.BooleanField(
+        "Тестовий (sandbox)", default=False,
+        help_text="Створено в тестовому режимі LiqPay. У бойовому режимі ніколи не зараховується.",
+    )
     provider_transaction_id = models.CharField(
         "ID транзакції провайдера", max_length=64, unique=True, null=True, blank=True
     )

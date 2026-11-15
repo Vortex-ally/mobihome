@@ -1,7 +1,7 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path, reverse_lazy
 
-from . import views
+from . import payment_views, views
 
 app_name = "properties"
 
@@ -72,6 +72,10 @@ urlpatterns = [
     path("profile/<str:username>/", views.public_profile, name="public_profile"),
     path("payment/<int:pk>/", views.payment, name="payment"),
     path("payment/<int:pk>/paid/", views.payment_paid, name="payment_paid"),
+    path("payment/<int:pk>/start/", payment_views.start_payment, name="start_payment"),
+    path("payments/liqpay/callback/", payment_views.liqpay_callback, name="liqpay_callback"),
+    path("payments/<str:order_id>/result/", payment_views.payment_result, name="payment_result"),
+    path("payments/<str:order_id>/cancel/", payment_views.cancel_payment, name="cancel_payment"),
     path("property/<int:pk>/promote/", views.promote_listing, name="promote_listing"),
     path("property/<int:pk>/track-click/", views.track_click, name="track_click"),
     path("privacy-policy/", views.privacy_policy, name="privacy_policy"),

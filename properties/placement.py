@@ -47,7 +47,7 @@ def can_pay_for(user, prop):
     return user.is_staff or prop.owner_id == user.id
 
 
-def create_payment(user, prop, tariff=None):
+def create_payment(user, prop, tariff=None, is_test=False):
     """Створює платіж зі знімком умов тарифу. Нічого не змінює в оголошенні."""
     tariff = tariff or Tariff.placement()
     if tariff is None or not tariff.is_active:
@@ -64,30 +64,21 @@ def create_payment(user, prop, tariff=None):
         amount=tariff.price,
         currency=tariff.currency,
         duration_days=tariff.duration_days,
+        is_test=is_test,
     )
 
 
 def is_live(prop, now=None):
     """Оголошення опубліковане, схвалене, фото перевірено, не в архіві і період діє."""
     now = now or timezone.now()
-    return (
-        prop.is_published
-        and prop.moderation_status == ModerationStatus.APPROVED
-        and prop.is_verified_by_admin
-        and prop.archived_at is None
-        and prop.placement_until is not None
-        and prop.placement_until > now
-    )
+    placement_running = prop.placement_until is not None and prop.placement_until > now
+    return is_publishable(prop) and placement_running
 
 
 def is_publishable(prop):
     """Пройшло модерацію і може показуватись (без огляду на оплату)."""
-    return (
-        prop.is_published
-        and prop.moderation_status == ModerationStatus.APPROVED
-        and prop.is_verified_by_admin
-        and prop.archived_at is None
-    )
+    approved = prop.moderation_status == ModerationStatus.APPROVED
+    return all((prop.is_published, approved, prop.is_verified_by_admin, prop.archived_at is None))
 
 
 def _activate(payment, prop, now):
@@ -97,10 +88,33 @@ def _activate(payment, prop, now):
     prop.placement_until = end
 
 
+def _apply_period_rules(payment, prop, now):
+    """Визначає, що робити з оголошенням після зарахованої оплати. Повертає змінені поля."""
+    if is_live(prop, now):
+        # Продовження активного оголошення: +30 днів до поточної дати завершення.
+        _activate(payment, prop, now)
+        return ["placement_until"]
+    if prop.placement_until is not None and prop.placement_until <= now:
+        # Прострочене: повертається на модерацію; дні стартують з повторної публікації.
+        if prop.moderation_status == ModerationStatus.APPROVED:
+            prop.moderation_status = ModerationStatus.PENDING
+            return ["moderation_status"]
+        return []
+    if prop.placement_until is None and is_publishable(prop):
+        # Уже схвалене модератором, але ще не оплачувалось — публікація починається зараз.
+        _activate(payment, prop, now)
+        return ["placement_until"]
+    # Нове / на модерації — дні активуються при схваленні (activate_on_publication).
+    return []
+
+
 def apply_successful_payment(payment_id, *, paid_amount, paid_currency, transaction_id=None, paid_at=None):
     """
     Зараховує підтверджений провайдером успішний платіж. Повертає (payment, credited: bool).
-    Повторний виклик для того самого платежу нічого не змінює.
+
+    Ідемпотентність і захист від паралельних callback: платіж «захоплюється» атомарним
+    умовним UPDATE (applied_at IS NULL -> now). Лише один виклик отримує rowcount=1;
+    решта нічого не змінюють. Усе виконується в одній транзакції (відкат при помилці).
     """
     with transaction.atomic():
         payment = Payment.objects.select_for_update().get(pk=payment_id)
@@ -108,41 +122,34 @@ def apply_successful_payment(payment_id, *, paid_amount, paid_currency, transact
             return payment, False
 
         if Decimal(str(paid_amount)) != payment.amount or (paid_currency or "").upper() != payment.currency:
-            payment.status = PaymentStatus.PENDING
-            payment.error_message = (
-                f"Невідповідність суми/валюти: очікувалось {payment.amount} {payment.currency}, "
-                f"отримано {paid_amount} {paid_currency}. Потрібна ручна перевірка."
-            )[:255]
-            payment.save(update_fields=["status", "error_message", "updated_at"])
+            Payment.objects.filter(pk=payment.pk, applied_at__isnull=True).update(
+                status=PaymentStatus.PENDING,
+                error_message=(
+                    f"Невідповідність суми/валюти: очікувалось {payment.amount} {payment.currency}, "
+                    f"отримано {paid_amount} {paid_currency}. Потрібна ручна перевірка."
+                )[:255],
+                updated_at=timezone.now(),
+            )
+            payment.refresh_from_db()
+            return payment, False
+
+        now = timezone.now()
+        claimed = Payment.objects.filter(pk=payment.pk, applied_at__isnull=True).update(applied_at=now)
+        if claimed != 1:
+            payment.refresh_from_db()
             return payment, False
 
         prop = Property.objects.select_for_update().get(pk=payment.property_id)
-        now = timezone.now()
+        payment.applied_at = now
         payment.status = PaymentStatus.SUCCESS
         payment.paid_amount = Decimal(str(paid_amount))
         payment.paid_currency = paid_currency.upper()
         payment.paid_at = paid_at or now
-        payment.applied_at = now
         payment.error_message = ""
         if transaction_id:
             payment.provider_transaction_id = str(transaction_id)[:64]
 
-        prop_fields = []
-        if is_live(prop, now):
-            # Продовження активного оголошення: +30 днів до поточної дати завершення.
-            _activate(payment, prop, now)
-            prop_fields.append("placement_until")
-        elif prop.placement_until is not None and prop.placement_until <= now:
-            # Прострочене: повертається на модерацію; дні стартують з повторної публікації.
-            if prop.moderation_status == ModerationStatus.APPROVED:
-                prop.moderation_status = ModerationStatus.PENDING
-                prop_fields.append("moderation_status")
-        elif prop.placement_until is None and is_publishable(prop):
-            # Уже схвалене модератором, але ще не оплачувалось — публікація починається зараз.
-            _activate(payment, prop, now)
-            prop_fields.append("placement_until")
-        # Інакше (нове / на модерації) — дні активуються при схваленні (activate_on_publication).
-
+        prop_fields = _apply_period_rules(payment, prop, now)
         try:
             with transaction.atomic():
                 payment.save()
@@ -151,6 +158,16 @@ def apply_successful_payment(payment_id, *, paid_amount, paid_currency, transact
         if prop_fields:
             prop.save(update_fields=prop_fields + ["updated_at"])
         return payment, True
+
+
+def mark_reversed(payment_id, message=""):
+    """Повернення коштів провайдером. Період не скасовується автоматично — потрібне рішення адміна."""
+    with transaction.atomic():
+        payment = Payment.objects.select_for_update().get(pk=payment_id)
+        payment.status = PaymentStatus.REVERSED
+        payment.error_message = (message or "Кошти повернено. Перевірте розміщення вручну.")[:255]
+        payment.save(update_fields=["status", "error_message", "updated_at"])
+        return payment
 
 
 def activate_on_publication(prop_id):

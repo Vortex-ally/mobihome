@@ -925,6 +925,7 @@ def profile(request):
         .distinct()
     )
     
+    user_payments = request.user.payments.select_related("property").order_by("-created_at")[:50]
     reviews = ProfileReview.objects.filter(target_user=request.user)
     avg_rating = reviews.aggregate(Avg("rating"))["rating__avg"]
 
@@ -942,6 +943,7 @@ def profile(request):
     context = {
         "user_listings": user_listings, 
         "favorite_listings": favorite_listings,
+        "user_payments": user_payments,
         "form": form,
         "reviews": reviews,
         "avg_rating": avg_rating,
@@ -1103,41 +1105,44 @@ def public_profile(request, username):
 
 
 def payment(request, pk):
-    """Публікація оголошення: безкоштовно або оплата (LiqPay/Stripe). Доступно лише власнику або адміну."""
+    """
+    Публікація та оплата розміщення оголошення (власник або адмін):
+    - надіслати неопубліковане оголошення на модерацію;
+    - оплатити розміщення (99 грн / 30 днів) або продовжити його через LiqPay;
+    - історія платежів цього оголошення.
+    """
+    from .liqpay import payments_active
+
     prop = get_object_or_404(Property, pk=pk)
     if not request.user.is_authenticated:
         messages.error(request, "Увійдіть, щоб опублікувати оголошення.")
         return redirect("properties:property_detail", pk=pk)
-    if not (
-        request.user.is_staff
-        or (getattr(prop, "owner_id", None) and prop.owner_id == request.user.id)
-    ):
-        messages.error(request, "Публікувати можна лише своє оголошення.")
+    if not _can_manage_property(request.user, prop) or prop.archived_at:
+        messages.error(request, "Керувати можна лише своїм активним оголошенням.")
         return redirect("properties:property_detail", pk=pk)
-    if prop.is_published:
-        messages.info(request, "Оголошення вже опубліковане.")
+    if request.method == "POST" and request.POST.get("action") == "free" and not prop.is_published:
+        # Публікація лише після перевірки адміністратором (модерація + фотоперевірка).
+        prop.is_published = True
+        prop.moderation_status = ModerationStatus.PENDING
+        prop.is_verified_by_admin = False
+        prop.save(update_fields=["is_published", "moderation_status", "is_verified_by_admin"])
+        messages.success(
+            request,
+            "Оголошення надіслано на модерацію. Після перевірки адміністратором "
+            "воно з'явиться в каталозі.",
+        )
         return redirect("properties:property_detail", pk=pk)
-    if request.method == "POST":
-        action = request.POST.get("action")
-        if action == "free":
-            # Публікація лише після перевірки адміністратором (модерація + фотоперевірка).
-            prop.is_published = True
-            prop.moderation_status = ModerationStatus.PENDING
-            prop.is_verified_by_admin = False
-            prop.save(update_fields=["is_published", "moderation_status", "is_verified_by_admin"])
-            messages.success(
-                request,
-                "Оголошення надіслано на модерацію. Після перевірки адміністратором "
-                "воно з'явиться в каталозі.",
-            )
-            return redirect("properties:property_detail", pk=pk)
     return render(
         request,
         "properties/payment.html",
         {
             "property": prop,
-            "payments_enabled": settings.PAYMENTS_ENABLED,
+            "payments_enabled": payments_active(),
             "tariff": Tariff.placement(),
+            "property_payments": prop.payments.order_by("-created_at")[:20],
+            "awaiting_activation": prop.payments.filter(
+                status="success", activated_at__isnull=True
+            ).exists(),
         },
     )
 
