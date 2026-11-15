@@ -6,21 +6,6 @@ class PropertiesConfig(AppConfig):
     name = "properties"
     verbose_name = "Доступний Дім — Об'єкти та аудит"
 
-    def ready(self):
-        try:
-            from django.core.management import call_command
-            call_command("makemigrations", "properties", interactive=False)
-            call_command("migrate", interactive=False)
-        except Exception as e:
-            print(f"[AutoMigrate] Migration info: {e}")
-
-        try:
-            from .models import Property, ModerationStatus
-            Property.objects.filter(is_published=True).update(
-                moderation_status=ModerationStatus.APPROVED,
-                is_verified_by_admin=True,
-            )
-        except Exception as e:
-            print(f"[AutoApprove] Sync info: {e}")
-
-
+    # Міграції застосовуються явно: `python manage.py migrate`.
+    # Раніше тут виконувались makemigrations/migrate та масове схвалення оголошень
+    # при кожному старті — це обходило модерацію і ламало розгортання.

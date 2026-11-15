@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils import timezone
 from django.utils.html import format_html
 
 from .models import (
@@ -213,7 +214,7 @@ from .models import AuthSession, UserProfile
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "auth_provider", "telegram_id", "diia_id", "phone")
+    list_display = ("user", "auth_provider", "telegram_id", "google_sub", "phone")
     list_filter = ("auth_provider",)
     search_fields = ("user__username", "user__email", "telegram_id", "diia_id", "phone")
     raw_id_fields = ("user",)
@@ -221,9 +222,45 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(AuthSession)
 class AuthSessionAdmin(admin.ModelAdmin):
-    list_display = ("token", "session_type", "status", "user", "otp_code", "created_at", "expires_at")
+    list_display = ("short_token", "session_type", "status", "user", "created_at", "expires_at")
     list_filter = ("session_type", "status", "created_at")
-    search_fields = ("token", "user__username", "user__email", "otp_code")
+    search_fields = ("user__username", "user__email")
     raw_id_fields = ("user",)
+    exclude = ("otp_code", "token")
+    readonly_fields = ("session_type", "status", "user", "payload", "created_at", "expires_at")
+
+    @admin.display(description="Токен")
+    def short_token(self, obj):
+        return f"{obj.token[:8]}…" if obj.token else "—"
+
+    def has_add_permission(self, request):
+        return False
 
 
+
+
+# --- Обмеження спроб входу в адмінку (захист від перебору пароля) ---
+from django.http import HttpResponse  # noqa: E402
+
+from .security import login_is_locked, register_login_failure, reset_login_failures  # noqa: E402
+
+_original_admin_login = admin.site.login
+
+
+def _throttled_admin_login(request, extra_context=None):
+    if request.method != "POST":
+        return _original_admin_login(request, extra_context)
+    username = request.POST.get("username", "")
+    if login_is_locked(request, username):
+        return HttpResponse(
+            "Забагато невдалих спроб входу. Спробуйте пізніше.", status=429, content_type="text/plain; charset=utf-8"
+        )
+    response = _original_admin_login(request, extra_context)
+    if request.user.is_authenticated and request.user.is_staff:
+        reset_login_failures(request, username)
+    else:
+        register_login_failure(request, username)
+    return response
+
+
+admin.site.login = _throttled_admin_login

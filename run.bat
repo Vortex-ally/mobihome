@@ -11,6 +11,11 @@ if not exist "config\settings.py" (
     exit /b 1
 )
 
+if not exist ".env" (
+    echo Створюю .env з .env.example для локального запуску...
+    copy ".env.example" ".env" >nul
+)
+
 set PY=venv\Scripts\python.exe
 if not exist "%PY%" (
     echo [Помилка] Не знайдено venv. Створюю...

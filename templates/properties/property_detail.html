@@ -452,9 +452,11 @@
                                 <span style="color: #f59e0b; font-size: 1rem;">⭐</span> <span style="color: var(--text);">Підняти у ТОП</span>
                             </a>
                             {% endif %}
+                            {% if user.is_staff %}
                             <a href="{% url 'properties:auditor_form' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: var(--bg); font-size: 0.85rem; color: var(--text); font-weight: 500; border: 1px solid var(--border);">
                                 🛡️ <span style="color: var(--text);">Редагувати аудит</span>
                             </a>
+                            {% endif %}
                             <a href="{% url 'properties:delete_property' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: rgba(239, 68, 68, 0.08); font-size: 0.85rem; color: #ef4444; font-weight: 600; border: 1px solid rgba(239, 68, 68, 0.25);">
                                 🗑️ <span>Видалити оголошення</span>
                             </a>

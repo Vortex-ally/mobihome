@@ -23,8 +23,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--password",
             type=str,
-            default="admin12345",
-            help="Пароль суперюзера (за замовчуванням: admin12345)",
+            required=True,
+            help="Пароль суперюзера (обов'язково; стандартного пароля немає)",
         )
         parser.add_argument(
             "--email",
@@ -49,7 +49,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     f"УСПІХ: Пароль та права адміністратора для користувача '{username}' успішно ОНОВЛЕНО!\n"
-                    f"Логін: {username}\nПароль: {password}\nEmail: {email}"
+                    f"Логін: {username}\nEmail: {email}"
                 )
             )
         else:
@@ -61,6 +61,6 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     f"УСПІХ: Нового суперюзера '{username}' СТВОРЕНО!\n"
-                    f"Логін: {username}\nПароль: {password}\nEmail: {email}"
+                    f"Логін: {username}\nEmail: {email}"
                 )
             )

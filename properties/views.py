@@ -3,10 +3,9 @@
 """
 
 import json
-from datetime import timedelta
 
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.core.paginator import Paginator
@@ -18,7 +17,16 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .forms import AccessibilityAuditForm, AddListingForm, AuditRequestForm, PaymentForm, RegisterForm, UserProfileForm, ReviewForm
+from django.conf import settings
+
+from .forms import (
+    AccessibilityAuditForm,
+    AddListingForm,
+    AuditRequestForm,
+    RegisterForm,
+    ReviewForm,
+    UserProfileForm,
+)
 from .mobility import MOBILITY_LEVELS
 from .models import (
     AccessibilityAudit,
@@ -29,7 +37,6 @@ from .models import (
     ConsultationServiceType,
     EntranceStatus,
     Feature,
-    ListingType,
     ModerationStatus,
     Property,
     PropertyFavorite,
@@ -37,19 +44,15 @@ from .models import (
     ProfileReview,
     score_to_status,
 )
-from .social_auth import (
-    diia_callback,
-    diia_login,
+from .security import login_is_locked, register_login_failure, reset_login_failures
+from .social_auth import (  # noqa: F401 (реекспорт для urls.py)
+    diia_disabled,
     google_callback,
+    google_enabled,
     google_login,
-    google_verify_token,
-    otp_request,
-    otp_set_password,
-    otp_verify,
+    safe_next_url,
     telegram_callback,
-    telegram_check_session,
-    telegram_confirm_session,
-    telegram_qr_login,
+    telegram_enabled,
 )
 
 # Координати міст для карти (приблизно)
@@ -528,7 +531,8 @@ def property_detail(request, pk):
 
     now = timezone.now()
     can_promote = (
-        can_edit_audit
+        settings.PAYMENTS_ENABLED
+        and can_edit_audit
         and prop.is_published
         and (not prop.is_featured or (prop.featured_until and prop.featured_until < now))
     )
@@ -596,6 +600,21 @@ def property_detail(request, pk):
     return render(request, "properties/property_detail.html", context)
 
 
+def _is_staff(user):
+    return user.is_authenticated and (user.is_staff or user.is_superuser)
+
+
+def _visible_properties(user):
+    """Оголошення, які користувач має право бачити: публічні + свої; адмін бачить усі."""
+    if _is_staff(user):
+        return Property.objects.all()
+    if user.is_authenticated:
+        return Property.objects.filter(
+            Q(pk__in=Property.objects.public().values("pk")) | Q(owner=user)
+        )
+    return Property.objects.public()
+
+
 def _can_manage_property(user, prop):
     """Чи може користувач редагувати/видаляти оголошення (власник або адмін)."""
     if not user.is_authenticated:
@@ -641,12 +660,15 @@ def auditor_form(request, pk=None):
         if form.is_valid():
             obj = form.save(commit=False)
             if not obj.property_id:
-                prop_id = request.POST.get("property")
-                if prop_id:
-                    obj.property_id = int(prop_id)
+                prop_id = request.POST.get("property", "")
+                target = (
+                    Property.objects.filter(pk=int(prop_id)).first() if prop_id.isdigit() else None
+                )
+                if target is not None and not hasattr(target, "audit"):
+                    obj.property = target
                     obj.save()
                     return redirect("properties:property_detail", pk=obj.property_id)
-                form.add_error(None, "Оберіть об'єкт нерухомості.")
+                form.add_error(None, "Оберіть коректний об'єкт нерухомості без наявного аудиту.")
             else:
                 obj.save()
                 return redirect("properties:property_detail", pk=obj.property_id)
@@ -683,46 +705,72 @@ def auth_page(request):
     """Об'єднана сторінка: Вхід та Реєстрація на одній сторінці (таби)."""
     if request.user.is_authenticated:
         return redirect("properties:add_listing")
-    next_url = (request.GET.get("next") or request.POST.get("next") or "")[:500]
+    next_url = safe_next_url(
+        request, (request.GET.get("next") or request.POST.get("next") or "")[:500], default=""
+    )
+    if next_url:
+        # Використовується callback-ами Google/Telegram після підтвердження особи.
+        request.session["auth_next_url"] = next_url
     active_tab = request.GET.get("tab", "login")
     login_form = AuthenticationForm(request)
     register_form = RegisterForm()
     if request.method == "POST":
         form_type = request.POST.get("form_type", "login")
-        next_url = request.POST.get("next", next_url)
+        redirect_to = next_url or reverse("properties:add_listing")
         if form_type == "register":
             register_form = RegisterForm(request.POST)
             if register_form.is_valid():
                 user = register_form.save()
                 login(request, user)
                 messages.success(request, "Реєстрація успішна. Додайте ваше оголошення.")
-                return redirect(next_url if next_url.startswith("/") else "properties:add_listing")
+                return redirect(redirect_to)
             messages.error(request, "Виправте помилки у формі реєстрації.")
             active_tab = "register"
         else:
+            username = request.POST.get("username", "")
             login_form = AuthenticationForm(request, data=request.POST)
+            if login_is_locked(request, username):
+                messages.error(
+                    request, "Забагато невдалих спроб входу. Спробуйте пізніше або відновіть пароль."
+                )
+                _prepare_login_form(login_form)
+                return render(
+                    request,
+                    "properties/auth.html",
+                    _auth_context(login_form, register_form, "login", next_url),
+                    status=429,
+                )
             if login_form.is_valid():
                 user = login_form.get_user()
+                reset_login_failures(request, username)
                 login(request, user)
                 if request.POST.get("remember_me"):
                     request.session.set_expiry(60 * 60 * 24 * 14)
                 else:
                     request.session.set_expiry(0)
                 messages.success(request, "Ви успішно увійшли.")
-                return redirect(next_url if next_url.startswith("/") else "properties:add_listing")
+                return redirect(redirect_to)
+            register_login_failure(request, username)
             messages.error(request, "Невірний логін або пароль.")
             active_tab = "login"
     _prepare_login_form(login_form)
     return render(
         request,
         "properties/auth.html",
-        {
-            "login_form": login_form,
-            "register_form": register_form,
-            "active_tab": active_tab,
-            "next_url": next_url,
-        },
+        _auth_context(login_form, register_form, active_tab, next_url),
     )
+
+
+def _auth_context(login_form, register_form, active_tab, next_url):
+    return {
+        "login_form": login_form,
+        "register_form": register_form,
+        "active_tab": active_tab,
+        "next_url": next_url,
+        "google_enabled": google_enabled(),
+        "telegram_enabled": telegram_enabled(),
+        "telegram_bot_name": settings.TELEGRAM_BOT_NAME,
+    }
 
 
 def coming_soon(request):
@@ -734,10 +782,12 @@ def register(request):
     """Редірект на об'єднану сторінку входу/реєстрації."""
     if request.user.is_authenticated:
         return redirect("properties:add_listing")
-    next_url = request.GET.get("next", "")
+    from urllib.parse import urlencode
+
+    next_url = safe_next_url(request, request.GET.get("next", ""), default="")
     url = reverse("properties:auth")
     if next_url:
-        return redirect(f"{url}?tab=register&next={next_url}")
+        return redirect(f"{url}?{urlencode({'tab': 'register', 'next': next_url})}")
     return redirect(f"{url}?tab=register")
 
 
@@ -812,6 +862,7 @@ def logout_view(request):
     return redirect("properties:index")
 
 
+@require_POST
 def toggle_favorite(request, pk):
     """Додати або прибрати оголошення з обраного. POST; повертає JSON { is_favorite: bool }."""
     if not request.user.is_authenticated:
@@ -825,7 +876,7 @@ def toggle_favorite(request, pk):
             reverse("properties:auth") + "?" + urlencode({"next": request.build_absolute_uri()})
         )
 
-    prop = get_object_or_404(Property, pk=pk)
+    prop = get_object_or_404(_visible_properties(request.user), pk=pk)
     fav, created = PropertyFavorite.objects.get_or_create(user=request.user, property=prop)
     if not created:
         fav.delete()
@@ -918,7 +969,7 @@ def admin_verify_photos(request, pk):
         prop.verified_at = timezone.now()
         prop.save(update_fields=["is_verified_by_admin", "verified_at"])
         messages.success(request, f"Фотоперевірку для «{prop.name}» успішно підтверджено!")
-    return redirect(request.META.get("HTTP_REFERER", "properties:profile"))
+    return redirect("properties:profile")
 
 
 @login_required(login_url="/auth/")
@@ -956,24 +1007,33 @@ def admin_update_audit_request(request, pk):
             
         if audit_req.property:
             prop = audit_req.property
+            # Спершу бал аудиту: AccessibilityAudit.save() перераховує mobility_level об'єкта,
+            # тому ручний рівень застосовуємо після нього. update() не викликає перерахунок.
+            if total_score:
+                try:
+                    score_val = float(total_score)
+                except ValueError:
+                    score_val = None
+                if score_val is not None and 1 <= score_val <= 10:
+                    audit = AccessibilityAudit.objects.filter(property=prop).first()
+                    if audit is None:
+                        audit = AccessibilityAudit.objects.create(property=prop)
+                    AccessibilityAudit.objects.filter(pk=audit.pk).update(total_score=score_val)
+                else:
+                    messages.error(request, "Загальний бал має бути числом від 1 до 10.")
+            prop.refresh_from_db()
             updated_fields = []
-            if mobility_level is not None:
-                prop.mobility_level = mobility_level
+            if mobility_level in ("1", "2", "3", "4", "5"):
+                prop.mobility_level = int(mobility_level)
+                updated_fields.append("mobility_level")
+            elif mobility_level == "":
+                prop.mobility_level = None
                 updated_fields.append("mobility_level")
             if new_status == "completed":
                 prop.is_verified = True
                 updated_fields.append("is_verified")
             if updated_fields:
                 prop.save(update_fields=updated_fields)
-
-            if total_score is not None and total_score != "":
-                try:
-                    score_val = float(total_score)
-                    audit, created = AccessibilityAudit.objects.get_or_create(property=prop)
-                    audit.total_score = score_val
-                    audit.save(update_fields=["total_score"])
-                except ValueError:
-                    pass
 
         messages.success(request, f"Заявку на аудит #{audit_req.pk} успішно оновлено!")
     return redirect("properties:profile")
@@ -1040,75 +1100,27 @@ def payment(request, pk):
     if request.method == "POST":
         action = request.POST.get("action")
         if action == "free":
+            # Публікація лише після перевірки адміністратором (модерація + фотоперевірка).
             prop.is_published = True
-            prop.moderation_status = ModerationStatus.APPROVED
-            prop.is_verified_by_admin = True
-            prop.is_featured = False
-            prop.featured_until = None
-            prop.save(
-                update_fields=[
-                    "is_published",
-                    "moderation_status",
-                    "is_verified_by_admin",
-                    "is_featured",
-                    "featured_until",
-                ]
-            )
-            messages.success(
-                request, "Оголошення опубліковано безкоштовно та успішно розміщено в каталозі!"
-            )
-            return redirect("properties:property_detail", pk=pk)
-    return render(request, "properties/payment.html", {"property": prop})
-
-
-def promote_listing(request, pk):
-    """Рекламувати вже опубліковане оголошення (підвищена видимість 30 днів)."""
-    prop = get_object_or_404(Property, pk=pk)
-    if not request.user.is_authenticated:
-        messages.error(request, "Увійдіть, щоб замовити рекламу.")
-        return redirect("properties:property_detail", pk=pk)
-    if not (
-        request.user.is_staff
-        or (getattr(prop, "owner_id", None) and prop.owner_id == request.user.id)
-    ):
-        messages.error(request, "Рекламувати можна лише своє оголошення.")
-        return redirect("properties:property_detail", pk=pk)
-    if not prop.is_published:
-        messages.error(request, "Спочатку опублікуйте оголошення.")
-        return redirect("properties:property_detail", pk=pk)
-    FEATURED_PRICE = 99
-    PROMOTE_DAYS = 30
-    if request.method == "POST":
-        form = PaymentForm(request.POST)
-        if form.is_valid():
-            now = timezone.now()
-            if prop.featured_until and prop.featured_until > now:
-                prop.featured_until = prop.featured_until + timedelta(days=PROMOTE_DAYS)
-            else:
-                prop.featured_until = now + timedelta(days=PROMOTE_DAYS)
-            prop.is_featured = True
-            prop.save(update_fields=["is_featured", "featured_until"])
+            prop.moderation_status = ModerationStatus.PENDING
+            prop.is_verified_by_admin = False
+            prop.save(update_fields=["is_published", "moderation_status", "is_verified_by_admin"])
             messages.success(
                 request,
-                f'Реклама активована на {PROMOTE_DAYS} днів. Діє до {prop.featured_until.strftime("%d.%m.%Y")}.',
+                "Оголошення надіслано на модерацію. Після перевірки адміністратором "
+                "воно з'явиться в каталозі.",
             )
             return redirect("properties:property_detail", pk=pk)
-        messages.error(request, "Перевірте дані картки.")
-    else:
-        form = PaymentForm()
     return render(
         request,
-        "properties/promote_listing.html",
-        {"property": prop, "featured_price": FEATURED_PRICE, "form": form},
+        "properties/payment.html",
+        {"property": prop, "payments_enabled": settings.PAYMENTS_ENABLED},
     )
 
 
 def payment_paid(request, pk):
-    """Монетизація маркетплейсу: редірект на просування оголошення (ТОП/VIP) замість прямої купівлі об'єкта."""
-    prop = get_object_or_404(Property, pk=pk)
-    if not request.user.is_authenticated:
-        messages.info(request, "Зв'язок із продавцем здійснюється напряму через контакти у правому блоці.")
-        return redirect("properties:property_detail", pk=pk)
+    """Старий маршрут: перенаправляє на просування (або на оголошення)."""
+    get_object_or_404(Property, pk=pk)
     return redirect("properties:promote_listing", pk=pk)
 
 
@@ -1117,7 +1129,7 @@ def request_audit(request, property_id=None):
     target_property = None
     initial_data = {}
     if property_id:
-        target_property = get_object_or_404(Property, pk=property_id)
+        target_property = get_object_or_404(_visible_properties(request.user), pk=property_id)
         initial_data["property_address"] = f"{target_property.city}, {target_property.address}".strip(", ")
 
     if request.user.is_authenticated:
@@ -1210,7 +1222,9 @@ def download_passport(request, pk):
     Генерація та відображення офіційного "Паспорта доступності" об'єкта нерухомості за нормами ДБН.
     """
     prop = get_object_or_404(
-        Property.objects.select_related("audit", "owner").prefetch_related("features", "extra_photos"),
+        _visible_properties(request.user)
+        .select_related("audit", "owner")
+        .prefetch_related("features", "extra_photos"),
         pk=pk,
     )
     context = {
@@ -1235,7 +1249,8 @@ def compare_properties(request):
     properties = []
     if property_ids:
         properties = list(
-            Property.objects.filter(id__in=property_ids)
+            _visible_properties(request.user)
+            .filter(id__in=property_ids)
             .select_related("audit")
             .prefetch_related("features")[:4]
         )
@@ -1252,7 +1267,7 @@ def quick_view_api(request, pk):
     API Quick View для швидкого миттєвого перегляду картки об'єкта в модальному вікні (< 50 мс).
     """
     prop = get_object_or_404(
-        Property.objects.select_related("audit").prefetch_related("extra_photos"),
+        _visible_properties(request.user).select_related("audit").prefetch_related("extra_photos"),
         pk=pk,
     )
     _assign_listing_photo_urls([prop])
@@ -1280,8 +1295,8 @@ def quick_view_api(request, pk):
         "address": prop.address or "",
         "rooms": prop.rooms or "—",
         "area_sqm": prop.area_sqm or "—",
-        "floor": prop.floor or "—",
-        "total_floors": prop.total_floors or "—",
+        "floor": getattr(prop, "floor", None) or "—",
+        "total_floors": getattr(prop, "total_floors", None) or "—",
         "mobility_level": prop.mobility_level,
         "photos": photos,
         "audit_score": audit_score,
@@ -1292,35 +1307,21 @@ def quick_view_api(request, pk):
 
 def promote_listing(request, pk):
     """
-    Вибір пакету просування ("Стандарт ТОП", "Турбо-продаж", "Преміум") та активація промо-послуг.
+    Платне просування оголошення (ТОП). Доступно лише власнику або адміну.
+    Поки LiqPay не підключено (Етап 2), оплата недоступна: жодних фіктивних платежів
+    і жодного збору реквізитів картки на нашому сервері.
     """
     prop = get_object_or_404(Property, pk=pk)
     if not request.user.is_authenticated:
         messages.error(request, "Увійдіть, щоб замовити просування.")
         return redirect("properties:property_detail", pk=pk)
-
-    featured_price = 199
-    if request.method == "POST":
-        form = PaymentForm(request.POST)
-        if form.is_valid():
-            days = 7
-            prop.is_featured = True
-            prop.featured_until = timezone.now() + timedelta(days=days)
-            prop.save(update_fields=["is_featured", "featured_until"])
-            messages.success(request, f"Оголошення '{prop.name}' успішно переведено в ТОП на {days} днів!")
-            return redirect("properties:property_detail", pk=pk)
-    else:
-        form = PaymentForm()
-
-    return render(
-        request,
-        "properties/promote_listing.html",
-        {
-            "property": prop,
-            "form": form,
-            "featured_price": featured_price,
-        },
-    )
+    if not _can_manage_property(request.user, prop):
+        messages.error(request, "Просувати можна лише власне оголошення.")
+        return redirect("properties:property_detail", pk=pk)
+    if not settings.PAYMENTS_ENABLED:
+        messages.info(request, "Платне просування тимчасово недоступне.")
+        return redirect("properties:property_detail", pk=pk)
+    raise Http404  # Реалізація оплати — Етап 2 (LiqPay).
 
 
 @require_POST

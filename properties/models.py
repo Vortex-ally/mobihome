@@ -581,6 +581,9 @@ class UserProfile(models.Model):
     diia_id = models.CharField(
         "ID у Дії", max_length=64, unique=True, null=True, blank=True
     )
+    google_sub = models.CharField(
+        "Google ID (sub)", max_length=64, unique=True, null=True, blank=True
+    )
     avatar_url = models.URLField(
         "URL Аватарки", max_length=500, null=True, blank=True
     )

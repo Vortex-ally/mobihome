@@ -820,9 +820,29 @@
 <script>
 var qvFetchTimer = null;
 
-function renderModalContent(data) {
+function qvEscape(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;');
+}
+
+function qvSafeUrl(value) {
+    var v = String(value || '');
+    // Лише відносні шляхи сайту або http(s) (для фото); жодних javascript:/data:
+    if (/^\/(?!\/)/.test(v) || /^https?:\/\//i.test(v)) return v;
+    return '';
+}
+
+function renderModalContent(rawData) {
     var body = document.getElementById('qv-body');
     if (!body) return;
+    // Усі значення (назва, адреса, місто тощо) вводять користувачі — екрануємо перед innerHTML.
+    var data = {};
+    Object.keys(rawData || {}).forEach(function(k) {
+        data[k] = (k === 'photos') ? rawData[k] : qvEscape(rawData[k]);
+    });
+    data.url = qvEscape(qvSafeUrl(rawData && rawData.url));
+    data.photos = ((rawData && rawData.photos) || []).map(function(u) { return qvEscape(qvSafeUrl(u)); }).filter(Boolean);
 
     var photosHtml = data.photos && data.photos.length 
         ? '<img src="' + data.photos[0] + '" class="w-100 h-100 object-fit-cover rounded-3">'
@@ -893,7 +913,7 @@ function openQuickView(el) {
     var name = '', price = '', city = '', address = '', photo = '', audit = '', mobility = '', rooms = '', area = '', floor = '', totalFloors = '', url = '';
 
     if (typeof el === 'object' && el !== null) {
-        propertyId = el.getAttribute('data-id');
+        propertyId = parseInt(el.getAttribute('data-id'), 10) || 0;
         name = el.getAttribute('data-name') || '';
         price = el.getAttribute('data-price') || '';
         city = el.getAttribute('data-city') || '';
@@ -907,7 +927,7 @@ function openQuickView(el) {
         totalFloors = el.getAttribute('data-total-floors') || '';
         url = el.getAttribute('data-url') || '';
     } else {
-        propertyId = el;
+        propertyId = parseInt(el, 10) || 0;
     }
 
     if (name) {
