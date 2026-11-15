@@ -9,3 +9,6 @@ class PropertiesConfig(AppConfig):
     # Міграції застосовуються явно: `python manage.py migrate`.
     # Раніше тут виконувались makemigrations/migrate та масове схвалення оголошень
     # при кожному старті — це обходило модерацію і ламало розгортання.
+
+    def ready(self):
+        from . import signals  # noqa: F401

@@ -1,6 +1,6 @@
 """Тариф «Розміщення квартири», структура платежів, цілісність БД, адмінпанель, вихід."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from io import StringIO
 
@@ -11,10 +11,18 @@ from django.db.models import ProtectedError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from properties.models import ModerationStatus, Payment, PaymentStatus, Property, Tariff
+from properties.models import (
+    ModerationStatus,
+    Payment,
+    PaymentStatus,
+    PlacementTransition,
+    Property,
+    Tariff,
+)
 from properties.placement import (
     PlacementError,
     apply_successful_payment,
+    apply_transition,
     create_payment,
     mark_unsuccessful,
 )
@@ -103,21 +111,74 @@ class PlacementPaymentTests(TestCase):
         self.assertEqual(p.period_start, current_end)
         self.assertEqual(p.period_end, current_end + timedelta(days=30))
 
-    def test_renewal_of_expired_listing_starts_now(self):
-        Property.objects.filter(pk=self.prop.pk).update(placement_until=timezone.now() - timedelta(days=5))
-        before = timezone.now()
-        p, _ = _pay(create_payment(self.owner, self.prop))
-        self.assertGreaterEqual(p.period_start, before)
-        self.assertEqual(p.period_end - p.period_start, timedelta(days=30))
-
-    def test_payment_does_not_publish_pending_listing(self):
+    def test_payment_for_new_listing_starts_on_publication(self):
         pending = make_property(owner=self.owner, public=False)
-        _pay(create_payment(self.owner, pending))
+        payment, credited = _pay(create_payment(self.owner, pending))
+        self.assertTrue(credited)
         pending.refresh_from_db()
+        # Оплата не публікує і не запускає відлік
         self.assertEqual(pending.moderation_status, ModerationStatus.PENDING)
         self.assertFalse(pending.is_published)
-        self.assertIsNotNone(pending.placement_until)
+        self.assertIsNone(pending.placement_until)
+        self.assertIsNone(payment.activated_at)
         self.assertFalse(Property.objects.public().filter(pk=pending.pk).exists())
+        # Схвалення адміністратором -> старт 30 днів
+        self.client.force_login(make_admin())
+        before = timezone.now()
+        self.client.post(f"/admin-action/property/{pending.pk}/approve/")
+        pending.refresh_from_db()
+        payment.refresh_from_db()
+        self.assertIsNotNone(payment.activated_at)
+        self.assertGreaterEqual(payment.period_start, before)
+        self.assertEqual(payment.period_end - payment.period_start, timedelta(days=30))
+        self.assertEqual(pending.placement_until, payment.period_end)
+
+    def test_expired_listing_returns_to_moderation_and_starts_on_republication(self):
+        Property.objects.filter(pk=self.prop.pk).update(placement_until=timezone.now() - timedelta(days=5))
+        payment, credited = _pay(create_payment(self.owner, self.prop))
+        self.assertTrue(credited)
+        self.prop.refresh_from_db()
+        self.assertEqual(self.prop.moderation_status, ModerationStatus.PENDING)
+        self.assertLess(self.prop.placement_until, timezone.now())  # оплата не продовжила
+        self.assertIsNone(payment.period_start)
+        # Повторна публікація через масову дію адмінки
+        self.client.force_login(make_admin())
+        before = timezone.now()
+        self.client.post("/admin/properties/property/",
+                         {"action": "make_approved", "_selected_action": [self.prop.pk]})
+        payment.refresh_from_db()
+        self.prop.refresh_from_db()
+        self.assertGreaterEqual(payment.period_start, before)
+        self.assertEqual(self.prop.placement_until, payment.period_end)
+        self.assertEqual(payment.period_end - payment.period_start, timedelta(days=30))
+
+    def test_two_payments_before_publication_chain(self):
+        pending = make_property(owner=self.owner, public=False)
+        p1, _ = _pay(create_payment(self.owner, pending))
+        p2, _ = _pay(create_payment(self.owner, pending))
+        pending.is_published = True
+        pending.moderation_status = ModerationStatus.APPROVED
+        pending.is_verified_by_admin = True
+        pending.save()  # схвалення через збереження моделі (форма адмінки / list_editable)
+        p1.refresh_from_db()
+        p2.refresh_from_db()
+        pending.refresh_from_db()
+        self.assertEqual(p2.period_start, p1.period_end)
+        self.assertEqual(pending.placement_until, p1.period_start + timedelta(days=60))
+
+    def test_rejected_listing_does_not_activate(self):
+        pending = make_property(owner=self.owner, public=False)
+        payment, _ = _pay(create_payment(self.owner, pending))
+        self.client.force_login(make_admin())
+        self.client.post(f"/admin-action/property/{pending.pk}/reject/", {"moderation_note": "x"})
+        payment.refresh_from_db()
+        self.assertIsNone(payment.activated_at)
+        self.assertEqual(payment.status, PaymentStatus.SUCCESS)
+
+    def test_approved_but_unpaid_listing_starts_at_payment(self):
+        p, _ = _pay(create_payment(self.owner, self.prop))
+        self.assertIsNotNone(p.activated_at)
+        self.assertEqual(p.period_end - p.period_start, timedelta(days=30))
 
     def test_amount_or_currency_mismatch_not_applied(self):
         for amount, currency in ((Decimal("1.00"), "UAH"), (Decimal("99.00"), "USD")):
@@ -343,3 +404,61 @@ class AdminPlacementTests(TestCase):
         self.client.post("/admin/auth/user/", {"action": "deactivate_users", "_selected_action": [self.admin.pk]})
         self.admin.refresh_from_db()
         self.assertTrue(self.admin.is_active)
+
+
+class TransitionPeriodTests(TestCase):
+    def setUp(self):
+        self.owner = make_user("owner")
+        self.live = make_property(owner=self.owner, name="Опубліковане")
+        self.pending = make_property(owner=self.owner, public=False, name="На модерації")
+        self.archived = make_property(owner=self.owner, archived_at=timezone.now())
+        self.already_paid = make_property(owner=self.owner,
+                                          placement_until=timezone.now() + timedelta(days=3))
+
+    def _state(self):
+        return {r["pk"]: r for r in Property.objects.values(
+            "pk", "moderation_status", "is_published", "is_verified_by_admin", "updated_at", "created_at")}
+
+    def test_dry_run_changes_nothing(self):
+        out = StringIO()
+        call_command("apply_placement_transition", stdout=out)
+        self.assertIn("Оголошень для перехідного періоду: 1", out.getvalue())
+        self.live.refresh_from_db()
+        self.assertIsNone(self.live.placement_until)
+        self.assertFalse(PlacementTransition.objects.exists())
+
+    def test_apply_once_only_touches_placement(self):
+        before = self._state()
+        call_command("apply_placement_transition", "--apply", "--start", "2026-12-01", stdout=StringIO())
+        self.live.refresh_from_db()
+        expected = timezone.make_aware(datetime(2026, 12, 31))
+        self.assertEqual(self.live.placement_until, expected)
+        for pk in (self.pending.pk, self.archived.pk):
+            self.assertIsNone(Property.objects.get(pk=pk).placement_until)
+        self.assertGreater(Property.objects.get(pk=self.already_paid.pk).placement_until, timezone.now())
+        self.assertEqual(before, self._state())
+        record = PlacementTransition.objects.get()
+        self.assertEqual((record.listings_count, record.listing_ids), (1, [self.live.pk]))
+        with self.assertRaises(PlacementError):
+            apply_transition(timezone.now())
+        out = StringIO()
+        call_command("apply_placement_transition", "--apply", stdout=out)
+        self.assertIn("Уже застосовано", out.getvalue())
+        self.assertEqual(PlacementTransition.objects.count(), 1)
+
+    @override_settings(PLACEMENT_PAYMENT_REQUIRED=True)
+    def test_after_transition_ends_payment_is_required(self):
+        apply_transition(timezone.now())
+        self.assertTrue(Property.objects.public().filter(pk=self.live.pk).exists())
+        Property.objects.filter(pk=self.live.pk).update(placement_until=timezone.now() - timedelta(seconds=1))
+        self.assertFalse(Property.objects.public().filter(pk=self.live.pk).exists())
+        payment, _ = _pay(create_payment(self.owner, self.live))
+        self.live.refresh_from_db()
+        self.assertEqual(self.live.moderation_status, ModerationStatus.PENDING)
+        self.assertFalse(Property.objects.public().filter(pk=self.live.pk).exists())
+        self.live.moderation_status = ModerationStatus.APPROVED
+        self.live.save()
+        self.assertTrue(Property.objects.public().filter(pk=self.live.pk).exists())
+        payment.refresh_from_db()
+        self.assertEqual(payment.amount, Decimal("99.00"))
+        self.assertEqual(payment.period_end - payment.period_start, timedelta(days=30))

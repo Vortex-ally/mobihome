@@ -1,14 +1,19 @@
 """
-Бізнес-логіка платного розміщення квартири.
+Бізнес-логіка платного розміщення квартири (затверджені правила).
 
-Правила (затверджені):
-- Тариф «Розміщення квартири»: одна оплата — одне оголошення — один період.
-- Якщо розміщення ще діє, новий період додається до поточної дати завершення;
-  якщо завершилося (або ще не було) — рахується від моменту підтвердження оплати.
-- Оплата НЕ змінює статус модерації та не публікує оголошення: публічність
-  визначається модерацією + оплаченим періодом.
-- Успішний платіж застосовується до оголошення рівно один раз (ідемпотентно).
-- Сума та валюта, підтверджені провайдером, мають збігатися з очікуваними.
+- Тариф «Розміщення квартири»: одна оплата — одне оголошення — один період (30 днів).
+- Відлік оплаченого періоду починається з ФАКТИЧНОЇ ПУБЛІКАЦІЇ після модерації,
+  а не з моменту оплати:
+    * нове оголошення: оплачено -> модерація -> схвалення -> старт 30 днів;
+    * прострочене оголошення: після оплати повертається на модерацію,
+      30 днів починаються з повторної публікації;
+    * активне (опубліковане, з діючим періодом) оголошення: 30 днів одразу
+      додаються до поточної дати завершення, без повторної модерації.
+- Оплата сама по собі ніколи не публікує й не схвалює оголошення.
+- Успішний платіж зараховується рівно один раз (ідемпотентно); сума та валюта,
+  підтверджені провайдером, мають збігатися з очікуваними.
+- Перехідний період для оголошень, опублікованих до запуску обов'язкової оплати:
+  одноразово, 30 днів від дати активації платної системи (apply_transition).
 """
 
 import uuid
@@ -18,7 +23,16 @@ from decimal import Decimal
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from .models import Payment, PaymentStatus, Property, Tariff
+from .models import (
+    ModerationStatus,
+    Payment,
+    PaymentStatus,
+    PlacementTransition,
+    Property,
+    Tariff,
+)
+
+TRANSITION_DAYS = 30
 
 
 class PlacementError(Exception):
@@ -53,22 +67,44 @@ def create_payment(user, prop, tariff=None):
     )
 
 
-def compute_period(prop, duration_days, now=None):
+def is_live(prop, now=None):
+    """Оголошення опубліковане, схвалене, фото перевірено, не в архіві і період діє."""
     now = now or timezone.now()
+    return (
+        prop.is_published
+        and prop.moderation_status == ModerationStatus.APPROVED
+        and prop.is_verified_by_admin
+        and prop.archived_at is None
+        and prop.placement_until is not None
+        and prop.placement_until > now
+    )
+
+
+def is_publishable(prop):
+    """Пройшло модерацію і може показуватись (без огляду на оплату)."""
+    return (
+        prop.is_published
+        and prop.moderation_status == ModerationStatus.APPROVED
+        and prop.is_verified_by_admin
+        and prop.archived_at is None
+    )
+
+
+def _activate(payment, prop, now):
     start = prop.placement_until if prop.placement_until and prop.placement_until > now else now
-    return start, start + timedelta(days=duration_days)
+    end = start + timedelta(days=payment.duration_days)
+    payment.period_start, payment.period_end, payment.activated_at = start, end, now
+    prop.placement_until = end
 
 
 def apply_successful_payment(payment_id, *, paid_amount, paid_currency, transaction_id=None, paid_at=None):
     """
-    Застосовує підтверджений провайдером успішний платіж. Повертає (payment, applied: bool).
+    Зараховує підтверджений провайдером успішний платіж. Повертає (payment, credited: bool).
     Повторний виклик для того самого платежу нічого не змінює.
     """
     with transaction.atomic():
         payment = Payment.objects.select_for_update().get(pk=payment_id)
-        if payment.applied_at is not None:
-            return payment, False
-        if payment.status == PaymentStatus.REVERSED:
+        if payment.applied_at is not None or payment.status == PaymentStatus.REVERSED:
             return payment, False
 
         if Decimal(str(paid_amount)) != payment.amount or (paid_currency or "").upper() != payment.currency:
@@ -82,26 +118,94 @@ def apply_successful_payment(payment_id, *, paid_amount, paid_currency, transact
 
         prop = Property.objects.select_for_update().get(pk=payment.property_id)
         now = timezone.now()
-        start, end = compute_period(prop, payment.duration_days, now)
-        prop.placement_until = end
-        prop.save(update_fields=["placement_until", "updated_at"])
-
         payment.status = PaymentStatus.SUCCESS
         payment.paid_amount = Decimal(str(paid_amount))
         payment.paid_currency = paid_currency.upper()
         payment.paid_at = paid_at or now
-        payment.period_start = start
-        payment.period_end = end
         payment.applied_at = now
         payment.error_message = ""
         if transaction_id:
             payment.provider_transaction_id = str(transaction_id)[:64]
+
+        prop_fields = []
+        if is_live(prop, now):
+            # Продовження активного оголошення: +30 днів до поточної дати завершення.
+            _activate(payment, prop, now)
+            prop_fields.append("placement_until")
+        elif prop.placement_until is not None and prop.placement_until <= now:
+            # Прострочене: повертається на модерацію; дні стартують з повторної публікації.
+            if prop.moderation_status == ModerationStatus.APPROVED:
+                prop.moderation_status = ModerationStatus.PENDING
+                prop_fields.append("moderation_status")
+        elif prop.placement_until is None and is_publishable(prop):
+            # Уже схвалене модератором, але ще не оплачувалось — публікація починається зараз.
+            _activate(payment, prop, now)
+            prop_fields.append("placement_until")
+        # Інакше (нове / на модерації) — дні активуються при схваленні (activate_on_publication).
+
         try:
             with transaction.atomic():
                 payment.save()
         except IntegrityError:
             raise PlacementError("Ця транзакція провайдера вже прив'язана до іншого платежу.")
+        if prop_fields:
+            prop.save(update_fields=prop_fields + ["updated_at"])
         return payment, True
+
+
+def activate_on_publication(prop_id):
+    """
+    Викликається після схвалення/публікації оголошення. Якщо воно публікується і має
+    зараховані, але ще не активовані оплати — запускає їхні періоди від поточного моменту
+    (послідовно, якщо оплат кілька). Повертає кількість активованих оплат.
+    """
+    with transaction.atomic():
+        prop = Property.objects.select_for_update().get(pk=prop_id)
+        if not is_publishable(prop):
+            return 0
+        pending = list(
+            Payment.objects.select_for_update()
+            .filter(property=prop, status=PaymentStatus.SUCCESS,
+                    applied_at__isnull=False, activated_at__isnull=True)
+            .order_by("paid_at", "pk")
+        )
+        if not pending:
+            return 0
+        now = timezone.now()
+        for payment in pending:
+            _activate(payment, prop, now)
+            payment.save(update_fields=["period_start", "period_end", "activated_at", "updated_at"])
+        prop.save(update_fields=["placement_until", "updated_at"])
+        return len(pending)
+
+
+def transition_candidates():
+    """Оголошення, опубліковані до запуску оплати: пройшли модерацію і ще без періоду."""
+    return Property.objects.filter(
+        is_published=True,
+        moderation_status=ModerationStatus.APPROVED,
+        is_verified_by_admin=True,
+        archived_at__isnull=True,
+        placement_until__isnull=True,
+    )
+
+
+def apply_transition(starts_at, applied_by=""):
+    """
+    Одноразово дає наявним опублікованим оголошенням період до starts_at + 30 днів.
+    Змінює ЛИШЕ placement_until (без зміни статусів і дат оновлення). Повторно не виконується.
+    """
+    with transaction.atomic():
+        if PlacementTransition.objects.select_for_update().exists():
+            raise PlacementError("Перехідний період уже застосовано — повторне застосування заборонено.")
+        ends_at = starts_at + timedelta(days=TRANSITION_DAYS)
+        ids = list(transition_candidates().values_list("pk", flat=True))
+        # update() не змінює updated_at та інші поля — лише дату завершення розміщення.
+        Property.objects.filter(pk__in=ids).update(placement_until=ends_at)
+        return PlacementTransition.objects.create(
+            starts_at=starts_at, ends_at=ends_at, listings_count=len(ids),
+            listing_ids=ids, applied_by=applied_by[:150],
+        )
 
 
 def mark_unsuccessful(payment_id, status, message=""):

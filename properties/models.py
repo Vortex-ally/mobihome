@@ -857,8 +857,13 @@ class Payment(models.Model):
     period_start = models.DateTimeField("Період з", null=True, blank=True)
     period_end = models.DateTimeField("Період до", null=True, blank=True)
     applied_at = models.DateTimeField(
-        "Застосовано до оголошення", null=True, blank=True,
-        help_text="Маркер ідемпотентності: період додається до оголошення лише один раз.",
+        "Оплату зараховано", null=True, blank=True,
+        help_text="Маркер ідемпотентності: успішна оплата зараховується лише один раз.",
+    )
+    activated_at = models.DateTimeField(
+        "Період активовано", null=True, blank=True,
+        help_text="Коли оплачені дні почали діяти: одразу (продовження активного оголошення) "
+        "або в момент публікації після модерації.",
     )
     error_message = models.CharField("Повідомлення про помилку", max_length=255, blank=True)
     created_at = models.DateTimeField("Створено", auto_now_add=True)
@@ -920,3 +925,24 @@ class PaymentEvent(models.Model):
 
     def __str__(self):
         return f"{self.order_id or '—'} {self.provider_status} ({self.created_at:%d.%m.%Y %H:%M})"
+
+
+class PlacementTransition(models.Model):
+    """
+    Журнал одноразового перехідного періоду для оголошень, опублікованих до запуску
+    обов'язкової оплати. Запис існує => перехід уже застосовано, повторно не виконується.
+    """
+
+    applied_at = models.DateTimeField("Застосовано", auto_now_add=True)
+    starts_at = models.DateTimeField("Дата активації платної системи")
+    ends_at = models.DateTimeField("Перехідний період до")
+    listings_count = models.PositiveIntegerField("Кількість оголошень")
+    listing_ids = models.JSONField("ID оголошень", default=list)
+    applied_by = models.CharField("Ким застосовано", max_length=150, blank=True)
+
+    class Meta:
+        verbose_name = "Перехідний період"
+        verbose_name_plural = "Перехідний період (журнал)"
+
+    def __str__(self):
+        return f"Перехідний період до {self.ends_at:%d.%m.%Y} ({self.listings_count} оголошень)"

@@ -11,6 +11,7 @@ from .models import (
     Payment,
     PaymentEvent,
     PaymentStatus,
+    PlacementTransition,
     Tariff,
     AuditRequest,
     ConsultationRequest,
@@ -107,7 +108,7 @@ class PaymentInline(admin.TabularInline):
     can_delete = False
     show_change_link = True
     fields = ("order_id", "status", "amount", "currency", "paid_amount", "paid_at",
-              "period_start", "period_end", "provider_transaction_id")
+              "activated_at", "period_start", "period_end", "provider_transaction_id")
     readonly_fields = fields
 
     def has_add_permission(self, request, obj=None):
@@ -197,9 +198,17 @@ class PropertyAdmin(admin.ModelAdmin):
         label = "до" if obj.placement_active else "завершилось"
         return f"{label} {timezone.localtime(obj.placement_until):%d.%m.%Y}"
 
+    def _activate_paid(self, queryset):
+        # update() не надсилає post_save — запускаємо оплачені періоди явно.
+        from .placement import activate_on_publication
+
+        for pk in queryset.values_list("pk", flat=True):
+            activate_on_publication(pk)
+
     @admin.action(description="✓ Підтвердити фотомодерацію")
     def make_verified_by_admin(self, request, queryset):
         updated = queryset.update(is_verified_by_admin=True, verified_at=timezone.now())
+        self._activate_paid(queryset)
         self.message_user(request, f"Підтверджено фотомодерацію для {updated} оголошень.")
 
     @admin.action(description="✗ Скасувати фотомодерацію")
@@ -215,6 +224,7 @@ class PropertyAdmin(admin.ModelAdmin):
             is_verified_by_admin=True,
             verified_at=timezone.now(),
         )
+        self._activate_paid(queryset)
         self.message_user(request, f"Схвалено та опубліковано {updated} оголошень.")
 
     @admin.action(description="Відхилити")
@@ -230,6 +240,7 @@ class PropertyAdmin(admin.ModelAdmin):
     @admin.action(description="Активувати (показувати, якщо схвалено)")
     def activate_listings(self, request, queryset):
         updated = queryset.filter(archived_at__isnull=True).update(is_published=True)
+        self._activate_paid(queryset)
         self.message_user(request, f"Активовано {updated} оголошень.")
 
     @admin.action(description="Деактивувати (приховати з каталогу)")
@@ -547,3 +558,20 @@ class UserAdmin(DjangoUserAdmin):
     def activate_users(self, request, queryset):
         updated = queryset.update(is_active=True)
         self.message_user(request, f"Активовано {updated} користувачів.")
+
+
+@admin.register(PlacementTransition)
+class PlacementTransitionAdmin(admin.ModelAdmin):
+    list_display = ("applied_at", "starts_at", "ends_at", "listings_count", "applied_by")
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
