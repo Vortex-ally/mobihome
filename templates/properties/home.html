@@ -400,7 +400,9 @@
 .catalog-grid__item { min-width: 0; width: 100%; }
 
 @media (max-width: 639.98px) {
-    .wrap { padding-left: 16px; padding-right: 16px; }
+    /* Футер не чіпаємо: його .row.g-5 має від'ємні поля 24px і потребує стандартного відступу .wrap,
+       інакше на мобільних з'являється горизонтальне переповнення 8px. */
+    .wrap:not(footer .wrap) { padding-left: 16px; padding-right: 16px; }
 }
 
 /* Картки оголошень: тонкий контур, м’яка глибина, витончений hover */
