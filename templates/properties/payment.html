@@ -24,8 +24,14 @@
     </div>
     <div class="col-lg-6">
         <div class="card card-premium card-body h-100">
-            <h2 class="h6 mb-2" style="color: var(--text);">Підвищена видимість (платно)</h2>
-            <p class="small text-muted mb-0">Платне просування оголошення тимчасово недоступне. Ми повідомимо, щойно воно з'явиться.</p>
+            {% if tariff %}
+            <h2 class="h6 mb-2" style="color: var(--text);">{{ tariff.name }}</h2>
+            <p class="small text-muted mb-2"><strong style="color: var(--text);">{{ tariff.price|floatformat:"0" }} грн</strong> за {{ tariff.duration_days }} днів розміщення одного оголошення.</p>
+            <p class="small text-muted mb-0">Онлайн-оплата карткою буде доступна найближчим часом.</p>
+            {% else %}
+            <h2 class="h6 mb-2" style="color: var(--text);">Платне розміщення</h2>
+            <p class="small text-muted mb-0">Тариф розміщення наразі недоступний.</p>
+            {% endif %}
         </div>
     </div>
 </div>

@@ -743,6 +743,16 @@
             });
         });
     }
-    </script>
+    </script>{% if user.is_authenticated %}
+    {# Вихід лише POST-запитом (захист від CSRF-logout). Посилання «Вихід» не змінено: клік надсилає цю приховану форму. #}
+    <form id="logout-form" method="post" action="{% url 'properties:logout' %}" style="display:none" aria-hidden="true">{% csrf_token %}</form>
+    <script>
+    document.addEventListener('click', function(e) {
+        var link = e.target.closest && e.target.closest('a[href="{% url 'properties:logout' %}"]');
+        if (!link) return;
+        e.preventDefault();
+        document.getElementById('logout-form').submit();
+    });
+    </script>{% endif %}
 </body>
 </html>

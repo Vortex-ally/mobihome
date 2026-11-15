@@ -78,14 +78,21 @@ class PropertyQuerySet(models.QuerySet):
 
     def public(self):
         """
-        Повертає виключно записи, де status == 'approved' (схвалено модерацією),
-        is_published == True ТА is_verified_by_admin == True (фото перевірено адміном).
+        Публічний каталог: опубліковано, схвалено модерацією, фото перевірено адміном,
+        не в архіві. Якщо settings.PLACEMENT_PAYMENT_REQUIRED=True — ще й оплачене
+        розміщення діє (placement_until > now).
         """
-        return self.filter(
+        from django.utils import timezone
+
+        qs = self.filter(
             is_published=True,
             moderation_status=ModerationStatus.APPROVED,
             is_verified_by_admin=True,
+            archived_at__isnull=True,
         )
+        if getattr(settings, "PLACEMENT_PAYMENT_REQUIRED", False):
+            qs = qs.filter(placement_until__gt=timezone.now())
+        return qs
 
 
 class PropertyManager(models.Manager):
@@ -108,9 +115,19 @@ class Property(models.Model):
     address = models.CharField("Адреса", max_length=500)
     city = models.CharField("Місто", max_length=100, blank=True)
     price = models.DecimalField(
-        "Ціна (грн)", max_digits=12, decimal_places=2, null=True, blank=True
+        "Ціна (грн)",
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
     )
-    rooms = models.PositiveSmallIntegerField("Кількість кімнат", null=True, blank=True)
+    rooms = models.PositiveSmallIntegerField(
+        "Кількість кімнат",
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(50)],
+    )
     area_sqm = models.FloatField(
         "Площа (м²)", null=True, blank=True, validators=[MinValueValidator(1)]
     )
@@ -121,14 +138,17 @@ class Property(models.Model):
         "Рівень доступності (1–5)",
         null=True,
         blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
         help_text="1 = батьки з дитиною, 2 = без руки, 3 = крісло, 4 = без руки/ноги, 5 = універсальний",
     )
-    is_published = models.BooleanField("Опубліковано", default=True)
+    floor = models.PositiveSmallIntegerField("Поверх", null=True, blank=True)
+    total_floors = models.PositiveSmallIntegerField("Поверхів у будинку", null=True, blank=True)
+    is_published = models.BooleanField("Опубліковано", default=False)
     moderation_status = models.CharField(
         "Статус модерації",
         max_length=20,
         choices=ModerationStatus.choices,
-        default=ModerationStatus.APPROVED,
+        default=ModerationStatus.PENDING,
         help_text="Перевірка оголошення та фотографій житла на доступність/мобільність адміністратором.",
     )
     moderation_note = models.TextField(
@@ -147,16 +167,30 @@ class Property(models.Model):
         blank=True,
         help_text="Дата та час підтвердження фотомодерації адміністратором.",
     )
+    # Стара система ТОП: продаж припинено. Поля збережено для історії та чинних ТОП до їх завершення.
     is_featured = models.BooleanField(
-        "Підвищена видимість (платне)",
+        "ТОП (застаріле)",
         default=False,
-        help_text="Оголошення показується вище в каталозі.",
+        help_text="Стара система ТОП. Новий продаж припинено; чинні ТОП діють до дати завершення.",
     )
     featured_until = models.DateTimeField(
-        "Реклама до",
+        "ТОП до (застаріле)",
         null=True,
         blank=True,
-        help_text="До якої дати діє підвищена видимість.",
+        help_text="До якої дати діє ТОП (стара система).",
+    )
+    placement_until = models.DateTimeField(
+        "Розміщення оплачено до",
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Кінець оплаченого періоду розміщення. Змінюється лише успішною оплатою.",
+    )
+    archived_at = models.DateTimeField(
+        "В архіві з",
+        null=True,
+        blank=True,
+        help_text="Оголошення приховане/«видалене» без втрати історії платежів.",
     )
     view_count = models.PositiveIntegerField("Перегляди", default=0)
     contact_phone = models.CharField("Контактний телефон", max_length=30, blank=True)
@@ -182,9 +216,53 @@ class Property(models.Model):
         verbose_name = "Об'єкт нерухомості"
         verbose_name_plural = "Об'єкти нерухомості"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["is_published", "moderation_status", "is_verified_by_admin"],
+                name="property_public_idx",
+            ),
+            models.Index(fields=["city"], name="property_city_idx"),
+            models.Index(fields=["listing_type", "price"], name="property_type_price_idx"),
+            models.Index(fields=["created_at"], name="property_created_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(price__isnull=True) | models.Q(price__gte=0),
+                name="property_price_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rooms__isnull=True) | models.Q(rooms__gte=1),
+                name="property_rooms_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(area_sqm__isnull=True) | models.Q(area_sqm__gt=0),
+                name="property_area_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(mobility_level__isnull=True)
+                | models.Q(mobility_level__gte=1, mobility_level__lte=5),
+                name="property_mobility_level_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(floor__isnull=True)
+                | models.Q(total_floors__isnull=True)
+                | models.Q(floor__lte=models.F("total_floors")),
+                name="property_floor_lte_total",
+            ),
+        ]
 
     def __str__(self):
         return self.name
+
+    @property
+    def placement_active(self):
+        from django.utils import timezone
+
+        return bool(self.placement_until and self.placement_until > timezone.now())
+
+    @property
+    def is_archived(self):
+        return self.archived_at is not None
 
     @property
     def featured_active(self):
@@ -662,5 +740,183 @@ class AuthSession(models.Model):
         return self.status == AuthSessionStatus.PENDING and timezone.now() < self.expires_at
 
 
+# ---------------------------------------------------------------------------
+# Тарифи та платежі (платне розміщення квартири)
+# ---------------------------------------------------------------------------
 
 
+class Tariff(models.Model):
+    """
+    Тариф платного розміщення. Змінювати ціну/термін можна в адмінці: платежі зберігають
+    копію умов на момент створення, тож старі платежі від цього не змінюються.
+    """
+
+    PLACEMENT_CODE = "placement"
+
+    code = models.SlugField("Код", max_length=50, unique=True)
+    name = models.CharField("Назва", max_length=150)
+    price = models.DecimalField(
+        "Ціна", max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))]
+    )
+    currency = models.CharField("Валюта", max_length=3, default="UAH")
+    duration_days = models.PositiveSmallIntegerField(
+        "Термін (днів)", validators=[MinValueValidator(1), MaxValueValidator(366)]
+    )
+    is_active = models.BooleanField("Доступний для оплати", default=True)
+    created_at = models.DateTimeField("Створено", auto_now_add=True)
+    updated_at = models.DateTimeField("Оновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Тариф"
+        verbose_name_plural = "Тарифи"
+        ordering = ["price"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(price__gt=0), name="tariff_price_positive"),
+            models.CheckConstraint(
+                condition=models.Q(duration_days__gte=1), name="tariff_duration_positive"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} — {self.price} {self.currency} / {self.duration_days} дн."
+
+    @classmethod
+    def placement(cls):
+        """Активний тариф «Розміщення квартири» або None."""
+        return cls.objects.filter(code=cls.PLACEMENT_CODE, is_active=True).first()
+
+
+class PaymentStatus(models.TextChoices):
+    CREATED = "created", "Створено"
+    PENDING = "pending", "Очікує підтвердження"
+    SUCCESS = "success", "Успішно"
+    FAILURE = "failure", "Відхилено"
+    CANCELLED = "cancelled", "Скасовано"
+    EXPIRED = "expired", "Не завершено (протерміновано)"
+    REVERSED = "reversed", "Повернено"
+
+
+class Payment(models.Model):
+    """
+    Платіж за розміщення одного оголошення на один період.
+
+    Фінансовий запис: не видаляється разом з користувачем чи оголошенням
+    (user — SET_NULL зі знімком, property/tariff — PROTECT). Реквізити картки НЕ зберігаються.
+    """
+
+    FINAL_STATUSES = (
+        PaymentStatus.SUCCESS,
+        PaymentStatus.FAILURE,
+        PaymentStatus.CANCELLED,
+        PaymentStatus.EXPIRED,
+        PaymentStatus.REVERSED,
+    )
+
+    order_id = models.CharField("Номер замовлення", max_length=64, unique=True)
+    provider = models.CharField("Платіжний провайдер", max_length=20, default="liqpay")
+    provider_transaction_id = models.CharField(
+        "ID транзакції провайдера", max_length=64, unique=True, null=True, blank=True
+    )
+    status = models.CharField(
+        "Статус", max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.CREATED,
+        db_index=True,
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payments",
+        verbose_name="Користувач",
+    )
+    user_snapshot = models.CharField(
+        "Користувач (знімок)", max_length=255, blank=True,
+        help_text="Логін та email на момент оплати — зберігаються, навіть якщо акаунт видалено.",
+    )
+    property = models.ForeignKey(
+        Property,
+        on_delete=models.PROTECT,
+        related_name="payments",
+        verbose_name="Оголошення",
+    )
+    tariff = models.ForeignKey(
+        Tariff, on_delete=models.PROTECT, related_name="payments", verbose_name="Тариф"
+    )
+    # Знімок умов тарифу на момент створення платежу
+    tariff_name = models.CharField("Назва тарифу (знімок)", max_length=150)
+    amount = models.DecimalField("Сума до оплати", max_digits=10, decimal_places=2)
+    currency = models.CharField("Валюта", max_length=3, default="UAH")
+    duration_days = models.PositiveSmallIntegerField("Термін (днів, знімок)")
+    # Дані підтвердженої оплати (з callback провайдера)
+    paid_amount = models.DecimalField(
+        "Фактично сплачено", max_digits=10, decimal_places=2, null=True, blank=True
+    )
+    paid_currency = models.CharField("Валюта оплати", max_length=3, blank=True)
+    paid_at = models.DateTimeField("Дата оплати", null=True, blank=True)
+    # Оплачений період (заповнюється один раз, при застосуванні успішного платежу)
+    period_start = models.DateTimeField("Період з", null=True, blank=True)
+    period_end = models.DateTimeField("Період до", null=True, blank=True)
+    applied_at = models.DateTimeField(
+        "Застосовано до оголошення", null=True, blank=True,
+        help_text="Маркер ідемпотентності: період додається до оголошення лише один раз.",
+    )
+    error_message = models.CharField("Повідомлення про помилку", max_length=255, blank=True)
+    created_at = models.DateTimeField("Створено", auto_now_add=True)
+    updated_at = models.DateTimeField("Оновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Платіж"
+        verbose_name_plural = "Платежі"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["property", "status"], name="payment_property_status_idx"),
+            models.Index(fields=["user", "created_at"], name="payment_user_created_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="payment_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(duration_days__gte=1), name="payment_duration_positive"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(period_start__isnull=True)
+                | models.Q(period_end__gt=models.F("period_start")),
+                name="payment_period_valid",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.order_id} — {self.amount} {self.currency} ({self.get_status_display()})"
+
+    def is_final(self):
+        # Звичайний метод: ім'я поля `property` у цьому класі перекриває декоратор @property.
+        return self.status in self.FINAL_STATUSES
+
+
+class PaymentEvent(models.Model):
+    """Журнал повідомлень від провайдера (callback). Лише додавання, без змін."""
+
+    payment = models.ForeignKey(
+        Payment,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="events",
+        verbose_name="Платіж",
+    )
+    order_id = models.CharField("Номер замовлення", max_length=64, db_index=True, blank=True)
+    signature_valid = models.BooleanField("Підпис дійсний", default=False)
+    provider_status = models.CharField("Статус провайдера", max_length=32, blank=True)
+    payload = models.JSONField(
+        "Дані повідомлення", default=dict, blank=True,
+        help_text="Дані callback без реквізитів картки (маскований номер провайдер передає сам).",
+    )
+    note = models.CharField("Примітка", max_length=255, blank=True)
+    created_at = models.DateTimeField("Отримано", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Подія платежу"
+        verbose_name_plural = "Події платежів"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.order_id or '—'} {self.provider_status} ({self.created_at:%d.%m.%Y %H:%M})"

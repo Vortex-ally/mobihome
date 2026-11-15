@@ -192,6 +192,9 @@ DIIA_ENABLED = False
 
 # Оплата: вимкнено, доки не підключено LiqPay (Етап 2).
 PAYMENTS_ENABLED = False
+# Каталог показує лише оголошення з оплаченим розміщенням (placement_until > now).
+# Вмикається разом із запуском оплати; до того — поведінка як раніше.
+PLACEMENT_PAYMENT_REQUIRED = env_bool("PLACEMENT_PAYMENT_REQUIRED", False)
 
 # Обмеження спроб входу
 LOGIN_THROTTLE_MAX_ATTEMPTS = int(os.environ.get("LOGIN_THROTTLE_MAX_ATTEMPTS", "5"))

@@ -42,6 +42,7 @@ from .models import (
     PropertyFavorite,
     PropertyPhoto,
     ProfileReview,
+    Tariff,
     score_to_status,
 )
 from .security import login_is_locked, register_login_failure, reset_login_failures
@@ -497,11 +498,9 @@ def property_detail(request, pk):
         or request.user.is_superuser
         or (getattr(prop, "owner_id", None) and prop.owner_id == request.user.id)
     )
-    if not is_owner_or_staff and (
-        not prop.is_published
-        or prop.moderation_status != ModerationStatus.APPROVED
-        or not prop.is_verified_by_admin
-    ):
+    if prop.archived_at and not _is_staff(request.user):
+        raise Http404("Оголошення не знайдено.")
+    if not is_owner_or_staff and not Property.objects.public().filter(pk=prop.pk).exists():
         raise Http404("Оголошення не знайдено або не пройшло фотоперевірку адміністратора.")
 
     audit = getattr(prop, "audit", None)
@@ -530,12 +529,7 @@ def property_detail(request, pk):
         property_photos = _property_photos_for_pk(prop.pk)
 
     now = timezone.now()
-    can_promote = (
-        settings.PAYMENTS_ENABLED
-        and can_edit_audit
-        and prop.is_published
-        and (not prop.is_featured or (prop.featured_until and prop.featured_until < now))
-    )
+    # Стара система ТОП: продаж припинено; лише показ чинного ТОП до його завершення.
     featured_until_display = (
         prop.featured_until if prop.featured_until and prop.featured_until > now else None
     )
@@ -593,7 +587,6 @@ def property_detail(request, pk):
         "audit_rows": rows,
         "can_edit_audit": can_edit_audit,
         "property_photos": property_photos,
-        "can_promote": can_promote,
         "featured_until_display": featured_until_display,
         "is_favorite": is_favorite,
     }
@@ -610,7 +603,8 @@ def _visible_properties(user):
         return Property.objects.all()
     if user.is_authenticated:
         return Property.objects.filter(
-            Q(pk__in=Property.objects.public().values("pk")) | Q(owner=user)
+            Q(pk__in=Property.objects.public().values("pk"))
+            | Q(owner=user, archived_at__isnull=True)
         )
     return Property.objects.public()
 
@@ -631,7 +625,13 @@ def delete_property(request, pk):
         return redirect("properties:property_detail", pk=pk)
     if request.method == "POST":
         name = prop.name
-        prop.delete()
+        if prop.payments.exists():
+            # Є фінансові записи — не видаляємо фізично, а архівуємо (історія платежів зберігається).
+            prop.archived_at = timezone.now()
+            prop.is_published = False
+            prop.save(update_fields=["archived_at", "is_published", "updated_at"])
+        else:
+            prop.delete()
         messages.success(request, f"Оголошення «{name}» видалено.")
         return redirect("properties:home")
     return render(request, "properties/property_confirm_delete.html", {"property": prop})
@@ -856,10 +856,17 @@ def add_listing(request):
 
 
 def logout_view(request):
-    """Вихід з облікового запису. Приймає GET і POST, редірект на головну."""
-    logout(request)
-    messages.info(request, "Ви вийшли з облікового запису.")
-    return redirect("properties:index")
+    """
+    Вихід з облікового запису — лише POST (CSRF-захищений).
+    GET (напр. без JavaScript) показує сторінку підтвердження з кнопкою.
+    """
+    if request.method == "POST":
+        logout(request)
+        messages.info(request, "Ви вийшли з облікового запису.")
+        return redirect("properties:index")
+    if not request.user.is_authenticated:
+        return redirect("properties:index")
+    return render(request, "properties/logout_confirm.html")
 
 
 @require_POST
@@ -898,7 +905,9 @@ def profile(request):
     else:
         form = UserProfileForm(instance=request.user)
 
-    user_listings = Property.objects.filter(owner=request.user).order_by("-created_at")
+    user_listings = Property.objects.filter(
+        owner=request.user, archived_at__isnull=True
+    ).order_by("-created_at")
     favorite_listings = (
         Property.objects.filter(favorited_by__user=request.user)
         .order_by("-favorited_by__created_at")
@@ -1114,14 +1123,18 @@ def payment(request, pk):
     return render(
         request,
         "properties/payment.html",
-        {"property": prop, "payments_enabled": settings.PAYMENTS_ENABLED},
+        {
+            "property": prop,
+            "payments_enabled": settings.PAYMENTS_ENABLED,
+            "tariff": Tariff.placement(),
+        },
     )
 
 
 def payment_paid(request, pk):
-    """Старий маршрут: перенаправляє на просування (або на оголошення)."""
+    """Старий маршрут (PayPal-імітація ТОП). Перенаправляє на оголошення."""
     get_object_or_404(Property, pk=pk)
-    return redirect("properties:promote_listing", pk=pk)
+    return redirect("properties:property_detail", pk=pk)
 
 
 def request_audit(request, property_id=None):
@@ -1306,22 +1319,10 @@ def quick_view_api(request, pk):
 
 
 def promote_listing(request, pk):
-    """
-    Платне просування оголошення (ТОП). Доступно лише власнику або адміну.
-    Поки LiqPay не підключено (Етап 2), оплата недоступна: жодних фіктивних платежів
-    і жодного збору реквізитів картки на нашому сервері.
-    """
-    prop = get_object_or_404(Property, pk=pk)
-    if not request.user.is_authenticated:
-        messages.error(request, "Увійдіть, щоб замовити просування.")
-        return redirect("properties:property_detail", pk=pk)
-    if not _can_manage_property(request.user, prop):
-        messages.error(request, "Просувати можна лише власне оголошення.")
-        return redirect("properties:property_detail", pk=pk)
-    if not settings.PAYMENTS_ENABLED:
-        messages.info(request, "Платне просування тимчасово недоступне.")
-        return redirect("properties:property_detail", pk=pk)
-    raise Http404  # Реалізація оплати — Етап 2 (LiqPay).
+    """Стара система ТОП: продаж припинено. Маршрут залишено, щоб старі посилання не ламались."""
+    get_object_or_404(Property, pk=pk)
+    messages.info(request, "Послуга «ТОП» більше не надається.")
+    return redirect("properties:property_detail", pk=pk)
 
 
 @require_POST
