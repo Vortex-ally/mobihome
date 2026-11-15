@@ -1,0 +1,748 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="uk" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}mobi Home{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}Система підбору та оголошень доступного житла. Знайдіть квартиру без бар'єрів — mobi Home.{% endblock %}">
+    <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="theme-color" content="#0d9488">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Skeleton UI Loader Styles */
+        .skeleton-card { background: var(--bg-card); border-radius: 16px; overflow: hidden; border: 1px solid var(--border); }
+        .skeleton-pulse { animation: skeletonPulse 1.5s infinite ease-in-out; background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.15) 37%, rgba(255,255,255,0.05) 63%); background-size: 400% 100%; }
+        @keyframes skeletonPulse { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .skeleton-img { height: 200px; width: 100%; }
+        .skeleton-line { height: 16px; border-radius: 6px; margin-bottom: 8px; }
+        .skeleton-line-sm { height: 12px; width: 60%; border-radius: 4px; }
+        /* Палітра з дизайну: #D9E2E6, #B7A798, #6C696A, #334655, #051711 */
+        :root, [data-theme="light"] {
+            --bg: #e8ecf0;
+            --bg-card: #ffffff;
+            --bg-card-hover: #fafbfc;
+            --text: #051711;
+            --text-muted: #6C696A;
+            --accent: #334655;
+            --accent-hover: #253340;
+            --accent-soft: rgba(51, 70, 85, 0.12);
+            --accent-warm: #B7A798;
+            --border: #D9E2E6;
+            --nav-bg: rgba(255,255,255,0.96);
+            --nav-border: #D9E2E6;
+            --footer-bg: #051711;
+            --footer-text: #D9E2E6;
+            --radius: 16px;
+            --radius-sm: 10px;
+            --shadow: 0 4px 24px rgba(5, 23, 17, 0.06);
+            --shadow-hover: 0 12px 40px rgba(5, 23, 17, 0.1);
+            --font: 'Outfit', -apple-system, sans-serif;
+            --ease: cubic-bezier(0.4, 0, 0.2, 1);
+            --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1.15);
+            --section-alt: #D9E2E6;
+            --section-light: rgba(51, 70, 85, 0.04);
+            --text-bright: var(--text);
+            --color-pale: #D9E2E6;
+            --color-sage: #334655;
+            --color-accent: var(--accent);
+        }
+        [data-theme="dark"] {
+            --bg: #0d1412;
+            --bg-card: #151f1c;
+            --bg-card-hover: #1a2622;
+            --text: #e8ecf0;
+            --text-muted: #9ca3a6;
+            --accent: #7a9cad;
+            --accent-hover: #8fadbe;
+            --accent-soft: rgba(183, 167, 152, 0.15);
+            --accent-warm: #B7A798;
+            --border: #334655;
+            --nav-bg: rgba(5, 23, 17, 0.97);
+            --nav-border: #334655;
+            --footer-bg: #051711;
+            --footer-text: #b8c4c8;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+            --shadow-hover: 0 12px 40px rgba(0,0,0,0.4);
+            --section-alt: #151f1c;
+            --section-light: rgba(255,255,255,0.03);
+            --text-bright: #D9E2E6;
+            --color-pale: #1a2622;
+            --color-sage: #7a9cad;
+            --color-accent: var(--accent);
+        }
+
+        * { box-sizing: border-box; }
+        body { font-family: var(--font); font-size: 1rem; line-height: 1.65; color: var(--text); background: var(--bg); margin: 0; -webkit-font-smoothing: antialiased; }
+        h1, h2, h3, h4, h5, h6, p, span, a, label, .btn, .breadcrumb, .nav-link, .card-title, .card-text { text-shadow: none !important; }
+        h1, .h1, h2, .h2, h3, .h3, h4, .h4, h5, .h5, h6, .h6 { color: var(--text) !important; }
+        h1, .h1 { font-size: clamp(2rem, 4.5vw, 2.5rem); font-weight: 600; letter-spacing: -0.025em; line-height: 1.2; }
+        h2, .h2 { font-size: clamp(1.5rem, 2.5vw, 1.75rem); font-weight: 600; letter-spacing: -0.015em; }
+        h3, .h3 { font-size: 1.1rem; font-weight: 600; }
+        main, main p, main .lead { color: var(--text); }
+        main p { font-size: 1rem; line-height: 1.65; }
+        .card-text, .card-body p, main .text-muted { font-size: 1rem; line-height: 1.6; }
+        small, .small { font-size: 0.9375rem; line-height: 1.5; }
+        /* Читабельність у формах і анкетах */
+        .form-label { font-size: 1rem; font-weight: 500; color: var(--text) !important; }
+        /* Сучасні поля вводу та випадайки */
+        .form-control, .form-select {
+            font-size: 0.95rem;
+            font-weight: 400;
+            color: var(--text);
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.625rem 1rem;
+            transition: all 0.2s var(--ease);
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--accent);
+            outline: 0;
+            box-shadow: 0 0 0 4px var(--accent-soft);
+            background-color: var(--bg-card);
+            color: var(--text);
+        }
+
+        /* Виправлення білого фону при автозаповненні браузером */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover, 
+        input:-webkit-autofill:focus, 
+        input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 1000px var(--bg-card) inset !important;
+            -webkit-text-fill-color: var(--text) !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+        .form-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23334655'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 14px 10px;
+            padding-right: 2.5rem;
+            cursor: pointer;
+        }
+        [data-theme="dark"] .form-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%239ca3a6'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+        }
+        .form-control::placeholder { color: var(--text-muted); opacity: 0.7; }
+        
+        /* Приховуємо стандартні стрілочки в полях типу number, щоб вони не створювали білих плям */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+            display: none;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+            background: var(--bg-card);
+        }
+
+        textarea.form-control { line-height: 1.6; min-height: 5rem; }
+        main a:not(.btn) { color: var(--accent); }
+        main a:not(.btn):hover { color: var(--accent-hover); }
+        .card-premium .card-title, .card-premium .card-text, .card-premium .card-body { color: var(--text) !important; }
+        .card-premium .card-body .text-muted { color: var(--text-muted) !important; }
+        [data-theme="dark"] .text-muted { color: #b8b2aa !important; }
+        [data-theme="dark"] .card-premium .card-body .text-muted { color: #b8b2aa !important; }
+        .alert {
+            font-size: 1rem;
+            font-weight: 500;
+            line-height: 1.5;
+            letter-spacing: 0.01em;
+            border-width: 1px;
+            border-style: solid;
+            padding: 0.875rem 1rem;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .alert, .alert * { color: inherit; opacity: 1; }
+        .alert-success {
+            background: rgba(51, 70, 85, 0.1);
+            border-color: var(--accent);
+            color: #051711 !important;
+        }
+        [data-theme="dark"] .alert-success { background: rgba(122, 156, 173, 0.2); color: #e8ecf0 !important; border-color: var(--accent); }
+        .alert-info {
+            background: #d6eef8;
+            border-color: #0aa2c0;
+            color: #0a3d4a !important;
+        }
+        [data-theme="dark"] .alert-info { background: #0d3d4a; border-color: #0dcaf0; color: #e0f6fc !important; }
+        .alert-warning {
+            background: #f5ecd4;
+            border-color: #d4a005;
+            color: #4a3d02 !important;
+        }
+        [data-theme="dark"] .alert-warning { background: #4a4010; border-color: #ffc107; color: #f5ecd4 !important; }
+        .alert-danger, .alert-error {
+            background: #f5d8d8;
+            border-color: #c82333;
+            color: #5c2020 !important;
+        }
+        [data-theme="dark"] .alert-danger, [data-theme="dark"] .alert-error { background: #4a2020; border-color: #dc3545; color: #fde0e0 !important; }
+        .alert .btn-close { opacity: 0.9; }
+        .alert-success .btn-close { filter: brightness(0); }
+        .alert-info .btn-close, .alert-warning .btn-close, .alert-danger .btn-close, .alert-error .btn-close { filter: brightness(0); }
+        [data-theme="dark"] .alert-success .btn-close { filter: brightness(0); }
+        [data-theme="dark"] .alert-info .btn-close, [data-theme="dark"] .alert-warning .btn-close, [data-theme="dark"] .alert-danger .btn-close, [data-theme="dark"] .alert-error .btn-close { filter: brightness(0) invert(1); }
+        .btn-outline-secondary { color: var(--text-muted) !important; border-color: var(--border); background: var(--bg-card); }
+        .btn-outline-secondary:hover { color: var(--text) !important; background: var(--border); border-color: var(--border); }
+        select.form-select option { background: var(--bg-card); color: var(--text); }
+        .invalid-feedback { color: #dc3545 !important; }
+        label { color: var(--text) !important; }
+
+        .site-nav {
+            background: var(--nav-bg);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--nav-border);
+            padding: 1rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            transition: background 0.3s, border-color 0.3s;
+            box-shadow: 0 1px 0 rgba(255,255,255,0.03);
+        }
+        [data-theme="dark"] .site-nav { box-shadow: 0 1px 0 rgba(0,0,0,0.15); }
+        .site-nav .brand {
+            font-weight: 700;
+            font-size: 1.3125rem;
+            color: var(--text) !important;
+            text-decoration: none;
+            letter-spacing: -0.025em;
+            transition: color 0.2s ease;
+        }
+        .site-nav .brand:hover { color: var(--accent) !important; }
+        .site-nav .brand img.site-logo { opacity: 0.9; }
+        .site-nav .brand:hover img.site-logo { opacity: 1; }
+        .site-nav .nav-link {
+            color: var(--text-muted) !important;
+            font-weight: 500;
+            font-size: 0.9375rem;
+            padding: 0.5rem 0.75rem !important;
+            border-radius: var(--radius-sm);
+            text-decoration: none;
+            transition: color 0.2s, background 0.2s;
+        }
+        .site-nav .nav-link:hover { color: var(--text) !important; background: var(--accent-soft); }
+        .site-nav .nav-link.active { color: #253340 !important; background: rgba(51, 70, 85, 0.2); font-weight: 600; }
+        [data-theme="dark"] .site-nav .nav-link.active { background: rgba(217, 226, 230, 0.22); color: #e8ecf0 !important; }
+        .theme-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .theme-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+        .btn-nav-buy {
+            background-color: var(--accent);
+            color: white !important;
+            font-weight: 600;
+            border-radius: 12px;
+            padding: 0.5rem 1.5rem !important;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(51, 70, 85, 0.15);
+        }
+        .btn-nav-buy:hover {
+            background-color: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(51, 70, 85, 0.25);
+        }
+        main { min-height: 50vh; padding: 1.5rem 0 2.5rem; }
+        .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
+        @media (min-width: 768px) { .wrap { padding-left: 2rem; padding-right: 2rem; } }
+        .section-alt { background: var(--section-alt); }
+
+        .card-premium {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+            overflow: hidden;
+            transition: all 0.4s var(--ease-smooth);
+        }
+        .card-premium:hover { box-shadow: 0 8px 30px rgba(0,0,0,0.06); transform: translateY(-4px); }
+        .team-card { transition: all 0.4s var(--ease-smooth); }
+        .team-card:hover { transform: scale(1.02) translateY(-4px); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .btn { transition: all 0.3s var(--ease); }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        [data-theme="dark"] .card-premium:hover { box-shadow: var(--shadow-hover), 0 0 0 1px rgba(212, 146, 120, 0.2); }
+        .card-premium img { transition: transform 0.6s var(--ease-smooth); }
+        .card-premium:hover img { transform: scale(1.05); }
+        /* Блок фото в картках оголошень: однакові пропорції, фото завжди заповнюють область */
+        .listing-card-img-wrap {
+            height: 200px;
+            background: var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+        .listing-card-img-wrap img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transition: transform 0.6s var(--ease-smooth);
+        }
+        .card-header-premium {
+            background: var(--footer-bg);
+            color: var(--footer-text);
+            font-weight: 600;
+            padding: 1rem 1.25rem;
+            border: none;
+            border-radius: 0;
+        }
+        .btn-level-action {
+            background: var(--bg-card);
+            color: var(--footer-bg);
+            border: none;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-sm);
+        }
+        .btn-level-action:hover { background: var(--accent-soft); color: var(--accent); }
+        .btn-primary {
+            background: var(--accent);
+            border: none;
+            color: #fff;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-sm);
+            transition: background 0.2s, transform 0.15s;
+        }
+        .btn-primary:hover { background: var(--accent-hover); color: #fff; transform: translateY(-1px); }
+        .btn-outline-primary {
+            color: var(--accent);
+            border: 2px solid var(--accent);
+            background: transparent;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+        }
+        .btn-outline-primary:hover { background: var(--accent); color: #fff; }
+        .form-control, .form-select {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 0.65rem 1rem;
+            color: var(--text);
+        }
+        .form-control { background: var(--bg-card); }
+        .form-select {
+            background-color: var(--bg-card);
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23334655'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem 0.75rem;
+            padding-right: 2.25rem;
+        }
+        [data-theme="dark"] .form-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%239ca3a6'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+        }
+        .form-control::placeholder { color: var(--text-muted); opacity: 0.8; }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+            color: var(--text);
+        }
+        .form-control:focus { background: var(--bg-card); }
+        .form-select:focus { background-color: var(--bg-card); }
+        .form-label { color: var(--text) !important; }
+        input[type="file"] { color: var(--text) !important; }
+        input[type="file"]::file-selector-button { background: var(--accent-soft); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.35rem 0.75rem; }
+        .form-check-label { color: var(--text) !important; }
+        .text-muted { color: var(--text-muted) !important; }
+        .small { color: inherit; }
+        main .small { color: var(--text-muted); }
+        .breadcrumb {
+            --bs-breadcrumb-divider: ">";
+            font-size: 0.875rem;
+            font-weight: 400;
+            padding: 0.5rem 0 1rem;
+            margin-bottom: 0;
+            background: transparent;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0;
+        }
+        .breadcrumb-item {
+            display: inline;
+            color: var(--text-muted);
+        }
+        .breadcrumb-item + .breadcrumb-item::before {
+            content: " > ";
+            color: var(--text-muted);
+            padding: 0 0.35rem;
+            font-weight: 400;
+        }
+        .breadcrumb-item a {
+            color: var(--text-muted) !important;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        .breadcrumb-item a:hover {
+            color: var(--accent) !important;
+            text-decoration: underline;
+        }
+        .breadcrumb-item.active {
+            color: var(--text) !important;
+        }
+        .accordion-button { background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important; }
+        .accordion-button:not(.collapsed) { background: var(--accent-soft) !important; color: var(--text) !important; }
+        .accordion-body { background: var(--bg-card); color: var(--text); }
+        .accordion-button::after { filter: invert(0); }
+        [data-theme="dark"] .accordion-button::after { filter: invert(1); }
+        .pagination .page-link { background: var(--bg-card); color: var(--text); border-color: var(--border); }
+        .pagination .page-item.active .page-link { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .pagination .page-link:hover { background: var(--accent-soft); color: var(--text); }
+        .badge-score-high { background: var(--accent); color: #fff; }
+        .badge-score-mid { background: var(--accent-soft); color: var(--accent); }
+        .badge-score-low { background: var(--text-muted); color: #fff; }
+        .badge-score-none { background: var(--border); color: var(--text-muted); }
+
+        .listing-badge { font-size: 0.8125rem; font-weight: 600; padding: 0.4rem 0.75rem; border-radius: var(--radius-sm); letter-spacing: 0.02em; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .listing-badge--sale { background: #198754; color: #fff; }
+        .listing-badge--rent { background: #0d6efd; color: #fff; }
+        .listing-badge--featured { background: var(--accent-warm); color: #051711; }
+        .listing-badge-audit { font-size: 0.75rem; font-weight: 600; padding: 0.35rem 0.6rem; border-radius: var(--radius-sm); background: rgba(0,0,0,0.65); color: #fff; }
+        .listing-card-audit-line { font-size: 0.8125rem; color: var(--text-muted); }
+
+        footer {
+            background: var(--footer-bg);
+            color: var(--footer-text);
+            padding: 3rem 0 2rem;
+            margin-top: 0;
+        }
+        footer a { color: rgba(255,255,255,0.85); text-decoration: none; }
+        footer a:hover { color: #fff; }
+        .table thead { background: var(--footer-bg); color: var(--footer-text); }
+        .pagination .page-link { border-radius: var(--radius-sm); }
+        .accordion-button { border-radius: var(--radius-sm) !important; }
+        .accordion-item { border-radius: var(--radius-sm); }
+
+        .animate-on-scroll { opacity: 0; transform: translateY(14px); transition: opacity 0.75s var(--ease-smooth), transform 0.75s var(--ease-smooth); }
+        .animate-on-scroll.is-visible { opacity: 1; transform: translateY(0); }
+        html { scroll-behavior: smooth; }
+        @media (prefers-reduced-motion: reduce) { .animate-on-scroll { opacity: 1; transform: none; transition: none; } }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header class="site-nav">
+        {% url 'properties:add_listing' as add_listing_url %}
+        <div class="wrap d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <a class="brand d-flex align-items-center gap-2" href="{% url 'properties:index' %}">
+                <img src="{% static 'img/logo.png' %}" alt="mobi Home" height="52" class="site-logo flex-shrink-0" style="width: auto;">
+                <span>mobi Home</span>
+            </a>
+            <nav class="d-none d-lg-flex align-items-center flex-wrap gap-1">
+                <a class="nav-link{% if current_url_name == 'index' %} active{% endif %}" href="{% url 'properties:index' %}">Головна</a>
+                <a class="nav-link{% if current_url_name == 'home' %} active{% endif %}" href="{% url 'properties:home' %}">Каталог</a>
+                <a class="nav-link{% if current_url_name == 'accessibility_levels' %} active{% endif %}" href="{% url 'properties:accessibility_levels' %}">Рівні</a>
+                <a class="nav-link{% if current_url_name == 'services' %} active{% endif %}" href="{% url 'properties:services' %}">Послуги</a>
+                <a class="nav-link{% if current_url_name == 'about' %} active{% endif %}" href="{% url 'properties:about' %}">Про нас</a>
+                {% if user.is_authenticated %}
+                <a class="nav-link{% if current_url_name == 'profile' %} active{% endif %}" href="{% url 'properties:profile' %}">Профіль</a>
+                {% if user.is_staff %}
+                <a class="nav-link text-warning font-weight-bold" href="{% url 'admin:index' %}">⚙️ Адмінка</a>
+                {% endif %}
+                <a class="nav-link" href="{% url 'properties:logout' %}">Вихід</a>
+                <a class="btn btn-nav-buy ms-2" href="{% url 'properties:home' %}?type=sale">Купити</a>
+                {% else %}
+                <a class="nav-link{% if current_url_name == 'auth' or current_url_name == 'login' or current_url_name == 'register' %} active{% endif %}" href="{% url 'properties:auth' %}">Увійти / Реєстрація</a>
+                <a class="btn btn-nav-buy ms-2" href="{% url 'properties:home' %}?type=sale">Купити</a>
+                {% endif %}
+            </nav>
+            <button class="navbar-toggler d-lg-none border-0 p-2 ms-auto rounded-2" type="button" data-bs-toggle="collapse" data-bs-target="#navCollapse" aria-controls="navCollapse" aria-expanded="false" aria-label="Меню" style="background: var(--accent-soft);">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+        <div class="collapse d-lg-none" id="navCollapse">
+            <div class="wrap py-3 border-top" style="border-color: var(--border) !important;">
+                <a class="d-block py-2 nav-link{% if current_url_name == 'index' %} active{% endif %}" href="{% url 'properties:index' %}">Головна</a>
+                <a class="d-block py-2 nav-link{% if current_url_name == 'home' %} active{% endif %}" href="{% url 'properties:home' %}">Каталог</a>
+                <a class="d-block py-2 nav-link{% if current_url_name == 'accessibility_levels' %} active{% endif %}" href="{% url 'properties:accessibility_levels' %}">Рівні</a>
+                <a class="d-block py-2 nav-link{% if current_url_name == 'services' %} active{% endif %}" href="{% url 'properties:services' %}">Послуги</a>
+                <a class="d-block py-2 nav-link{% if current_url_name == 'about' %} active{% endif %}" href="{% url 'properties:about' %}">Про нас</a>
+                {% if user.is_authenticated %}
+                <a class="d-block py-2 nav-link{% if current_url_name == 'profile' %} active{% endif %}" href="{% url 'properties:profile' %}">Профіль</a>
+                {% if user.is_staff %}
+                <a class="d-block py-2 nav-link text-warning font-weight-bold" href="{% url 'admin:index' %}">⚙️ Адмін-панель</a>
+                {% endif %}
+                <a class="d-block py-2 nav-link" href="{% url 'properties:logout' %}">Вихід</a>
+                <a class="btn btn-nav-buy mt-2 w-100" href="{% url 'properties:home' %}?type=sale">Купити</a>
+                {% else %}
+                <a class="d-block py-2 nav-link{% if current_url_name == 'auth' or current_url_name == 'login' or current_url_name == 'register' %} active{% endif %}" href="{% url 'properties:auth' %}">Увійти / Реєстрація</a>
+                <a class="btn btn-nav-buy mt-2 w-100" href="{% url 'properties:home' %}?type=sale">Купити</a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main class="{% block main_class %}{% endblock %}">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show m-3 m-lg-4 rounded-2" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрити"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <div class="wrap">
+            <div class="row g-5">
+                <!-- Колонна 1: Про проект -->
+                <div class="col-lg-4 col-md-12">
+                    <div class="brand text-white">mobi Home</div>
+                    <p class="mb-4 opacity-70" style="max-width: 320px; line-height: 1.6;">
+                        Ваш надійний провідник у світі безбар'єрної нерухомості. Ми оцифровуємо доступність, щоб кожен міг знайти свій ідеальний дім.
+                    </p>
+                    <div class="d-flex gap-3">
+                        <a href="https://facebook.com/mobi.home.ua" class="social-link opacity-60 hover-opacity-100" target="_blank" rel="noopener">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-facebook" viewBox="0 0 16 16"><path d="M16 8.049c0-4.446-3.582-8.05-8-8.05C3.58 0-.002 3.603-.002 8.05c0 4.017 2.926 7.347 6.75 7.951v-5.625h-2.03V8.05H6.75V6.275c0-2.017 1.195-3.131 3.022-3.131.876 0 1.791.157 1.791.157v1.98h-1.009c-.993 0-1.303.621-1.303 1.258v1.51h2.218l-.354 2.326H9.25V16c3.824-.604 6.75-3.934 6.75-7.951z"/></svg>
+                        </a>
+                        <a href="https://instagram.com/mobi.home.ua" class="social-link opacity-60 hover-opacity-100" target="_blank" rel="noopener">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-instagram" viewBox="0 0 16 16"><path d="M8 0C5.829 0 5.556.01 4.703.048 3.85.088 3.269.222 2.76.42a3.917 3.917 0 0 0-1.417.923A3.927 3.927 0 0 0 .42 2.76C.222 3.268.087 3.85.048 4.7.01 5.555 0 5.827 0 8.001c0 2.172.01 2.444.048 3.297.04.852.174 1.433.372 1.942.205.526.478.972.923 1.417.444.445.89.719 1.416.923.51.198 1.09.333 1.942.372C5.555 15.99 5.827 16 8 16s2.444-.01 3.298-.048c.851-.04 1.434-.174 1.943-.372a3.916 3.916 0 0 0 1.416-.923c.445-.445.718-.891.923-1.417.197-.509.332-1.09.372-1.942C15.99 10.445 16 10.173 16 8s-.01-2.445-.048-3.299c-.04-.851-.175-1.433-.372-1.941a3.926 3.926 0 0 0-.923-1.417A3.911 3.911 0 0 0 13.24.42c-.51-.198-1.092-.333-1.943-.372C10.443.01 10.172 0 7.998 0h.003zm-.717 1.442h.718c2.136 0 2.389.007 3.232.046.78.035 1.204.166 1.486.275.373.145.64.319.92.599.28.28.453.546.598.92.11.281.24.705.275 1.485.039.843.047 1.096.047 3.231s-.008 2.389-.047 3.232c-.035.78-.166 1.203-.275 1.485a2.47 2.47 0 0 1-.599.919c-.28.28-.546.453-.92.598-.282.11-.705.24-1.485.276-.843.038-1.096.047-3.232.047s-2.39-.009-3.233-.047c-.78-.036-1.203-.166-1.485-.276a2.478 2.478 0 0 1-.92-.598 2.48 2.48 0 0 1-.6-.92c-.109-.281-.24-.705-.275-1.485-.038-.843-.046-1.096-.046-3.233 0-2.136.008-2.388.046-3.231.036-.78.166-1.204.276-1.486.145-.373.319-.64.599-.92.28-.28.546-.453.92-.598.282-.11.705-.24 1.485-.276.738-.034 1.024-.044 2.515-.045v.002zm4.988 1.328a.96.96 0 1 0 0 1.92.96.96 0 0 0 0-1.92zm-4.27 1.122a4.109 4.109 0 1 0 0 8.217 4.109 4.109 0 0 0 0-8.217zm0 1.441a2.667 2.667 0 1 1 0 5.334 2.667 2.667 0 0 1 0-5.334z"/></svg>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Колонна 2: Навігація -->
+                <div class="col-lg-2 col-md-4 col-6">
+                    <div class="footer-title">Навігація</div>
+                    <ul class="list-unstyled d-grid gap-2">
+                        <li><a href="{% url 'properties:index' %}">Головна</a></li>
+                        <li><a href="{% url 'properties:home' %}">Каталог</a></li>
+                        <li><a href="{% url 'properties:services' %}">Послуги</a></li>
+                        <li><a href="{% url 'properties:about' %}">Про нас</a></li>
+                    </ul>
+                </div>
+
+                <!-- Колонна 3: Нерухомість -->
+                <div class="col-lg-2 col-md-4 col-6">
+                    <div class="footer-title">Нерухомість</div>
+                    <ul class="list-unstyled d-grid gap-2">
+                        <li><a href="{% url 'properties:home' %}?type=sale">Купити</a></li>
+                        <li><a href="{% url 'properties:home' %}?type=rent">Орендувати</a></li>
+                        <li><a href="{% url 'properties:accessibility_levels' %}">Рівні доступності</a></li>
+                        <li><a href="{% url 'properties:home' %}?has_audit=1">Об'єкти з аудитом</a></li>
+                    </ul>
+                </div>
+
+                <!-- Колонна 4: Контакти -->
+                <div class="col-lg-4 col-md-4">
+                    <div class="footer-title">Контакти</div>
+                    <div class="contact-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="var(--accent-warm)" class="bi bi-geo-alt" viewBox="0 0 16 16"><path d="M12.166 8.94c-.524 1.062-1.234 2.12-1.96 3.07A31.493 31.493 0 0 1 8 14.58a31.481 31.481 0 0 1-2.206-2.57c-.726-.95-1.436-2.008-1.96-3.07C3.304 7.867 3 6.862 3 6a5 5 0 0 1 10 0c0 .862-.305 1.867-.834 2.94zM8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10z"/><path d="M8 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 1a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+                        <span>м. Київ, Україна</span>
+                    </div>
+                    <div class="contact-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="var(--accent-warm)" class="bi bi-telephone" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328zM1.884.511a1.745 1.745 0 0 1 2.612.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.884.511z"/></svg>
+                        <a href="tel:+380991234567" style="opacity: 0.8;">+38 (099) 123-45-67</a>
+                    </div>
+                    <div class="contact-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="var(--accent-warm)" class="bi bi-envelope" viewBox="0 0 16 16"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1H2zm13 2.383-4.708 2.825L15 11.105V5.383zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.47A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741zM1 11.105l4.708-2.897L1 5.383v5.722z"/></svg>
+                        <a href="mailto:info@mobi-home.ua" style="opacity: 0.8;">info@mobi-home.ua</a>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-5 pt-4 border-top d-flex flex-wrap justify-content-between gap-3" style="border-color: rgba(255,255,255,0.05) !important;">
+                <p class="small mb-0 opacity-40">&copy; {% now "Y" %} mobi Home. Платформа інклюзивної нерухомості.</p>
+                <div class="d-flex gap-4">
+                    <a href="{% url 'properties:privacy_policy' %}" class="small opacity-40">Політика конфіденційності</a>
+                    <a href="{% url 'properties:terms_of_service' %}" class="small opacity-40">Правила сервісу</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Віджет допомоги -->
+    <div id="supportWidget" class="support-widget" style="position: fixed; bottom: 30px; right: 30px; z-index: 1050; display: flex; flex-direction: column; align-items: flex-end;">
+        <!-- Expanded state (Popup Card) -->
+        <div id="supportWidgetPopup" class="card shadow-lg support-widget-popup mb-3" style="width: 320px; display: none; border-radius: 20px; border: 1px solid var(--border); background: var(--bg-card); opacity: 0; transition: opacity 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1); transform: translateY(20px) scale(0.95); transform-origin: bottom right; overflow: hidden;">
+            <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold" style="color: var(--text);">Потрібна допомога?</h5>
+                <button type="button" class="btn-close" id="supportWidgetClose" aria-label="Закрити"></button>
+            </div>
+            <div class="card-body p-4">
+                <p class="small text-muted mb-3" style="line-height: 1.5;">Наші консультанти підберуть варіанти за вашими критеріями доступності та бюджетом.</p>
+                <div class="d-flex flex-column gap-2 mb-3">
+                    <a href="tel:+380991234567" class="btn btn-light d-flex justify-content-start align-items-center gap-3 text-decoration-none support-link-item" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 14px; padding: 0.7rem 1rem; transition: all 0.2s ease;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="bi bi-telephone flex-shrink-0" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                        <span class="fw-medium text-sm">+38 (099) 123-45-67</span>
+                    </a>
+                    <a href="mailto:support@mobi-home.ua?subject=Запит%20щодо%20підбору%20доступного%20житла" class="btn btn-light d-flex justify-content-start align-items-center gap-3 text-decoration-none support-link-item" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 14px; padding: 0.7rem 1rem; transition: all 0.2s ease;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="bi bi-envelope flex-shrink-0" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        <span class="fw-medium text-sm text-truncate">support@mobi-home.ua</span>
+                    </a>
+                </div>
+                <a href="https://t.me/mobi_home_support" target="_blank" rel="noopener noreferrer" class="btn btn-primary w-100 py-2.5 d-flex align-items-center justify-content-center gap-2 text-decoration-none shadow-md support-action-btn" style="border-radius: 14px; font-weight: 600; transition: all 0.2s ease;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-telegram" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8.287 5.906c-.778.324-2.334.994-4.666 2.01-.389.155-.596.307-.62.456-.04.254.276.354.7.487.058.018.118.037.18.058.4.133.938.291 1.22.298.256.006.551-.101.884-.321 2.274-1.536 3.447-2.316 3.518-2.34.05-.017.119-.04.167-.001.047.039.043.113.038.134-.033.14-.946.99-1.42 1.43-.148.138-.254.237-.272.256-.39.403-.783.74-1.503.74-.092 0-.188-.008-.287-.024-.265-.044-.555-.136-.884-.239-.452-.142-.988-.31-1.393-.31-.08 0-.158.006-.233.018-.088.014-.176.035-.262.062l-.008.002c-.083.026-.168.056-.254.09l-.022.008c-.287.114-.627.248-.962.383-.347.14-.696.282-1.025.419-.387.162-.77.322-1.127.472-.375.158-.724.305-1.037.435-.11.045-.213.087-.308.125l-.01.004c-.033.013-.065.026-.096.038-.073.029-.142.056-.207.081-.073.028-.142.055-.207.08-.073.028-.142.055-.207.08l-.006.003c-.073.028-.142.054-.207.079-.17.065-.327.126-.47.18-.328.127-.588.227-.787.304l-.01.004c-.167.065-.306.118-.415.16l-.015.006c-.157.06-.279.108-.364.14-.075.03-.131.052-.167.066l-.012.005c-.01.004-.017.007-.022.009-.033.013-.058.022-.073.028l-.006.002c-.007.003-.01.004-.012.005-.008.003-.012.005-.015.006l-.001.001c-.004.001-.006.002-.007.002h-.001c-.001 0-.002.001-.003.001l-.001.001h-.001c-.001 0-.002 0-.003.001l-.001.001h-.001c-.001 0-.002 0-.003.001l-.001.001h-.001c-.001 0-.002 0-.003.001l-.001.001h-.001c-.001 0-.002 0-.003.001l-.001.001h-.001c-.001 0-.002 0-.003.001l-.001.001h-.001c-.001 0-.002 0-.003.001l-.001.001h-.001c-.001 0-.002 0-.003.001z"/></svg>
+                    Написати в Telegram
+                </a>
+            </div>
+        </div>
+
+        <!-- Collapsed state (Phone Icon) -->
+        <button id="supportWidgetBtn" class="btn btn-primary rounded-circle shadow-lg d-flex align-items-center justify-content-center p-0" style="width: 60px; height: 60px; background-color: #25D366; color: white; border: none; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="white" style="color: white !important;" class="bi bi-telephone-fill phone-ring-icon" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/></svg>
+            <span class="position-absolute top-0 start-100 translate-middle p-2 bg-danger border border-light rounded-circle" id="supportWidgetDot" style="display: none;">
+                <span class="visually-hidden">Нові повідомлення</span>
+            </span>
+        </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    (function(){
+        var theme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    (function(){
+        var alerts = document.querySelectorAll('.alert-dismissible .btn-close');
+        if (!alerts.length) return;
+        setTimeout(function(){
+            alerts.forEach(function(btn){ btn.click(); });
+        }, 5000);
+    })();
+    (function(){
+        if (!document.querySelectorAll('.animate-on-scroll').length) return;
+        var io = new IntersectionObserver(function(entries){ entries.forEach(function(e){ if(e.isIntersecting) e.target.classList.add('is-visible'); }); }, { rootMargin: '0px 0px -5% 0px' });
+        document.querySelectorAll('.animate-on-scroll').forEach(function(el){ io.observe(el); });
+    })();
+    (function(){
+        var c = document.querySelectorAll('[data-count]');
+        if(!c.length) return;
+        var io = new IntersectionObserver(function(entries){
+            entries.forEach(function(e){
+                if(!e.isIntersecting) return;
+                var el = e.target;
+                if(el.dataset.done) return;
+                el.dataset.done = '1';
+                var to = parseInt(el.getAttribute('data-count'),10);
+                if(isNaN(to)) return;
+                var dur = 1200, start = 0, t0 = null;
+                function step(ts){ if(!t0) t0=ts; var p = Math.min((ts-t0)/dur,1), ease = 1-Math.pow(1-p,3), v = Math.round(start+(to-start)*ease); el.textContent=v; if(p<1) requestAnimationFrame(step); }
+                requestAnimationFrame(step);
+            });
+        }, { threshold: 0.2 });
+        c.forEach(function(el){ io.observe(el); });
+    })();
+    </script>
+    <script>
+    (function(){
+        // Support Widget Logic
+        var supportBtn = document.getElementById('supportWidgetBtn');
+        var supportPopup = document.getElementById('supportWidgetPopup');
+        var supportClose = document.getElementById('supportWidgetClose');
+        var supportDot = document.getElementById('supportWidgetDot');
+        var hasOpened = false;
+        
+        function openSupport() {
+            supportPopup.style.display = 'block';
+            // Trigger reflow
+            void supportPopup.offsetWidth;
+            supportPopup.style.opacity = '1';
+            supportPopup.style.transform = 'translateY(0) scale(1)';
+            supportBtn.style.transform = 'scale(0.85)';
+            supportDot.style.display = 'none';
+            hasOpened = true;
+        }
+
+        function closeSupport() {
+            supportPopup.style.opacity = '0';
+            supportPopup.style.transform = 'translateY(20px) scale(0.95)';
+            supportBtn.style.transform = 'scale(1)';
+            setTimeout(function() {
+                supportPopup.style.display = 'none';
+            }, 400);
+        }
+
+        supportBtn.addEventListener('click', function() {
+            if (supportPopup.style.opacity === '1') {
+                closeSupport();
+            } else {
+                openSupport();
+            }
+        });
+
+        supportClose.addEventListener('click', closeSupport);
+
+        // Auto open after 1 minute (60000 ms)
+        setTimeout(function() {
+            if (!hasOpened && supportPopup.style.display !== 'block') {
+                // Play notification sound or animation
+                supportBtn.style.animation = 'pulse 1.5s infinite';
+                supportDot.style.display = 'inline-block';
+                openSupport();
+                setTimeout(function() {
+                    supportBtn.style.animation = 'none';
+                }, 3000);
+            }
+        }, 60000);
+    })();
+    </script>
+    <style>
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(37, 211, 102, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); }
+        }
+        @keyframes ring {
+            0% { transform: rotate(0); }
+            10% { transform: rotate(15deg); }
+            20% { transform: rotate(-10deg); }
+            30% { transform: rotate(15deg); }
+            40% { transform: rotate(-10deg); }
+            50% { transform: rotate(0); }
+            100% { transform: rotate(0); }
+        }
+        .phone-ring-icon {
+            animation: ring 2s infinite ease-in-out;
+            transform-origin: center center;
+        }
+        .support-link-item:hover {
+            border-color: var(--accent) !important;
+            background: var(--accent-soft) !important;
+            transform: translateY(-2px);
+        }
+        .support-link-item:active, .support-action-btn:active {
+            transform: scale(0.98) !important;
+        }
+        .support-action-btn:hover {
+            opacity: 0.92;
+            transform: translateY(-2px);
+        }
+    </style>
+    {% block extra_js %}{% endblock %}
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register("{% static 'sw.js' %}").then(function(reg) {
+                console.log('mobi home ServiceWorker registered:', reg.scope);
+            }).catch(function(err) {
+                console.log('mobi home ServiceWorker registration failed:', err);
+            });
+        });
+    }
+    </script>
+</body>
+</html>

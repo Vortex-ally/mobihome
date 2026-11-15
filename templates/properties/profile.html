@@ -1,0 +1,487 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Профіль — mobi home{% endblock %}
+
+{% block content %}
+<div class="wrap profile-page">
+<div class="profile-header card card-premium overflow-hidden mb-4">
+    <div class="profile-header-inner p-4 p-md-5">
+        <div class="row align-items-center g-4">
+            <div class="col-auto">
+                <div class="profile-avatar rounded-circle d-flex align-items-center justify-content-center" aria-hidden="true">
+                    <span class="profile-avatar-text">{{ user.username|slice:":1"|upper }}</span>
+                </div>
+            </div>
+            <div class="col">
+                <h1 class="profile-title mb-1">Профіль</h1>
+                <p class="profile-username mb-0">
+                    <span class="fw-600">{{ user.username }}</span>
+                    {% if user.email %}<span class="text-muted ms-2">·</span><span class="text-muted ms-2">{{ user.email }}</span>{% endif %}
+                </p>
+                <div class="mt-2">
+                    {% if avg_rating %}
+                    <span class="badge bg-warning text-dark"><i class="bi bi-star-fill"></i> ★ {{ avg_rating|floatformat:1 }}</span>
+                    {% else %}
+                    <span class="badge bg-secondary text-light">Немає оцінок</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-12 col-md-auto profile-buttons-col">
+                <div class="d-flex flex-wrap gap-2 profile-action-buttons">
+                    {% if user.is_staff %}
+                    <a href="{% url 'admin:index' %}" class="btn btn-warning px-4 py-2 font-weight-bold">
+                        ⚙️ Адмін-панель
+                    </a>
+                    {% endif %}
+                    <a href="{% url 'properties:add_listing' %}" class="btn btn-primary px-4 py-2">
+                        <span class="profile-btn-icon" aria-hidden="true">+</span>
+                        Додати оголошення
+                    </a>
+                    <a href="{% url 'properties:logout' %}" class="btn btn-outline-secondary px-4 py-2">Вийти</a>
+                </div>
+            </div>
+        </div>
+</div>
+
+<!-- Author Live Analytics Dashboard (Кабінет автора: Статистика у реальному часі) -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small">Перегляди (30 дн.)</span>
+                <span class="fs-5">👁</span>
+            </div>
+            <div class="h3 fw-bold text-info mb-0">1,420</div>
+            <div class="small text-success mt-1">↑ +18% цього тижня</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small">Кліків «Телефон»</span>
+                <span class="fs-5">📞</span>
+            </div>
+            <div class="h3 fw-bold text-success mb-0">84</div>
+            <div class="small text-success mt-1">↑ +12 дзвонів</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small">В обраному</span>
+                <span class="fs-5">❤️</span>
+            </div>
+            <div class="h3 fw-bold text-warning mb-0">36</div>
+            <div class="small text-muted mt-1">Збережено покупцями</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small">Конверсія</span>
+                <span class="fs-5">⚡</span>
+            </div>
+            <div class="h3 fw-bold text-teal mb-0" style="color: #0d9488;">5.9%</div>
+            <div class="small text-success mt-1">Висока активність</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-5">
+        <div class="card card-premium h-100">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3" style="color: var(--text);">Редагувати профіль</h2>
+                <form method="post" action="">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label small">Ім'я</label>
+                        {{ form.first_name }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Прізвище</label>
+                        {{ form.last_name }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Email</label>
+                        {{ form.email }}
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 mt-2">Зберегти зміни</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-7">
+        <section class="profile-favorites h-100">
+            <div class="card card-premium h-100">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-3" style="color: var(--text);">Обрані оголошення</h2>
+                    {% if favorite_listings %}
+                    <div class="listing-cards d-flex flex-column gap-3">
+                        {% for prop in favorite_listings %}
+                        <a href="{% url 'properties:property_detail' prop.pk %}" class="profile-listing-card card card-premium text-decoration-none d-block">
+                            <div class="card-body py-3 px-4 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                <span class="profile-listing-name">{{ prop.name }}</span>
+                                <span class="profile-listing-meta text-muted small">{% if prop.city %}{{ prop.city }}{% endif %}{% if prop.price %} · {{ prop.price|floatformat:0 }} грн{% endif %}</span>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="profile-empty p-4 text-center rounded">
+                        <p class="text-muted mb-0 small">Обрані оголошення з’являться тут. Натисніть «В обране» на сторінці оголошення.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+{% if user.is_staff or user.is_superuser %}
+<section class="admin-control-panel mb-5">
+    <div class="card card-premium shadow-lg border-0 overflow-hidden mb-4" style="border-radius: 20px;">
+        <div class="card-header p-4 text-white d-flex align-items-center justify-content-between flex-wrap gap-2" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+            <div class="d-flex align-items-center gap-3">
+                <span class="fs-3">🛠️</span>
+                <div>
+                    <h2 class="h5 text-white font-weight-bold mb-0">Панель адміністрування та модерації</h2>
+                    <p class="text-white-50 small mb-0">Оперативне керування оголошеннями та заявками на аудит</p>
+                </div>
+            </div>
+            <a href="{% url 'admin:index' %}" class="btn btn-outline-warning btn-sm px-3 rounded-3 fw-bold" target="_blank">
+                Відкрити Django Admin ↗
+            </a>
+        </div>
+
+        <div class="card-body p-4">
+            <!-- Блок 1: Оголошення на перевірці -->
+            <div class="admin-section mb-5">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h3 class="h6 font-weight-bold mb-0 d-flex align-items-center gap-2" style="color: var(--text);">
+                        <span>⏳</span> Оголошення на перевірці (Pending Moderation)
+                        {% if pending_properties %}
+                        <span class="badge bg-warning text-dark rounded-pill">{{ pending_properties|length }}</span>
+                        {% endif %}
+                    </h3>
+                </div>
+
+                {% if pending_properties %}
+                <div class="d-flex flex-column gap-3">
+                    {% for prop in pending_properties %}
+                    <div class="p-3 rounded-3 border shadow-sm" style="background: var(--bg-card); border-color: var(--border) !important;">
+                        <!-- Верхня компактна плашка -->
+                        <div class="row align-items-center g-3">
+                            <div class="col-auto">
+                                {% if prop.photo %}
+                                <img src="{{ prop.photo.url }}" alt="{{ prop.name }}" class="rounded-3 object-fit-cover" style="width: 70px; height: 70px;">
+                                {% elif prop.extra_photos.first %}
+                                <img src="{{ prop.extra_photos.first.image.url }}" alt="{{ prop.name }}" class="rounded-3 object-fit-cover" style="width: 70px; height: 70px;">
+                                {% else %}
+                                <div class="rounded-3 bg-secondary bg-opacity-25 d-flex align-items-center justify-content-center text-muted small" style="width: 70px; height: 70px;">📷 Немає</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4">
+                                <div class="fw-bold mb-1" style="color: var(--text);">
+                                    {{ prop.name }}
+                                </div>
+                                <div class="text-muted small">
+                                    📍 {{ prop.city }} {% if prop.address %}· {{ prop.address }}{% endif %}
+                                    {% if prop.price %} · <strong style="color: var(--accent);">{{ prop.price|floatformat:0 }} грн</strong>{% endif %}
+                                </div>
+                                <div class="text-muted small mt-1">
+                                    👤 Автор: <strong>{{ prop.owner.username|default:"Гість" }}</strong> · 📅 {{ prop.created_at|date:"d.m.Y H:i" }}
+                                </div>
+                            </div>
+                            <div class="col-md-7 text-md-end">
+                                <div class="d-flex flex-wrap align-items-center justify-content-md-end gap-2">
+                                    <!-- Кнопка Переглянути повністю (Accordion Collapse) -->
+                                    <button class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#modDetails{{ prop.pk }}" aria-expanded="false">
+                                        🔍 Переглянути повністю
+                                    </button>
+
+                                    <!-- Кнопка Прев'ю у новій вкладці -->
+                                    <a href="{% url 'properties:property_detail' prop.pk %}" target="_blank" class="btn btn-outline-secondary btn-sm px-3 rounded-3 fw-bold">
+                                        👁️ Прев'ю
+                                    </a>
+
+                                    <!-- Кнопка Схвалити -->
+                                    <form method="post" action="{% url 'properties:admin_approve_property' prop.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-success btn-sm px-3 fw-bold rounded-3">
+                                            ✅ Схвалити
+                                        </button>
+                                    </form>
+                                </div>
+
+                                <!-- Форма Відхилення -->
+                                <div class="mt-2 d-flex justify-content-md-end">
+                                    <form method="post" action="{% url 'properties:admin_reject_property' prop.pk %}" class="d-flex gap-2 w-100" style="max-width: 360px;">
+                                        {% csrf_token %}
+                                        <input type="text" name="moderation_note" class="form-control form-control-sm rounded-3" placeholder="Причина відхилення..." required>
+                                        <button type="submit" class="btn btn-outline-danger btn-sm px-3 fw-bold rounded-3 flex-shrink-0">
+                                            ❌ Відхилити
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Розгорнутий блок деталей (Collapse Accordion) -->
+                        <div class="collapse mt-3 pt-3 border-top" id="modDetails{{ prop.pk }}" style="border-color: var(--border) !important;">
+                            <!-- Галерея фотографій -->
+                            <div class="mb-3">
+                                <div class="fw-bold small text-muted mb-2">📸 Галерея завантажених фотографій:</div>
+                                <div class="d-flex flex-wrap gap-2">
+                                    {% if prop.photo %}
+                                    <a href="{{ prop.photo.url }}" target="_blank">
+                                        <img src="{{ prop.photo.url }}" class="rounded-2 object-fit-cover border shadow-sm" style="width: 110px; height: 85px;" alt="Головне фото">
+                                    </a>
+                                    {% endif %}
+                                    {% for photo in prop.extra_photos.all %}
+                                    <a href="{{ photo.image.url }}" target="_blank">
+                                        <img src="{{ photo.image.url }}" class="rounded-2 object-fit-cover border shadow-sm" style="width: 110px; height: 85px;" alt="Фото об'єкта">
+                                    </a>
+                                    {% empty %}
+                                    {% if not prop.photo %}
+                                    <span class="text-muted small">До цього оголошення ще не завантажено фотографій.</span>
+                                    {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-3">
+                                <!-- Опис -->
+                                <div class="col-md-7">
+                                    <div class="fw-bold small text-muted mb-1">📝 Повний опис:</div>
+                                    <div class="p-3 rounded-2 text-break small" style="background: var(--section-alt); color: var(--text); max-height: 220px; overflow-y: auto;">
+                                        {{ prop.description|linebreaksbr|default:"Опис відсутній." }}
+                                    </div>
+                                </div>
+                                <!-- Характеристики -->
+                                <div class="col-md-5">
+                                    <div class="fw-bold small text-muted mb-1">⚙️ Параметри об'єкта:</div>
+                                    <ul class="list-group list-group-flush small rounded-2 border" style="background: var(--section-alt);">
+                                        <li class="list-group-item bg-transparent d-flex justify-content-between py-1 text-muted">
+                                            <span>Тип оголошення:</span>
+                                            <strong style="color: var(--text);">{{ prop.get_listing_type_display|default:"—" }}</strong>
+                                        </li>
+                                        <li class="list-group-item bg-transparent d-flex justify-content-between py-1 text-muted">
+                                            <span>Кімнат:</span>
+                                            <strong style="color: var(--text);">{{ prop.rooms|default:"—" }}</strong>
+                                        </li>
+                                        <li class="list-group-item bg-transparent d-flex justify-content-between py-1 text-muted">
+                                            <span>Площа:</span>
+                                            <strong style="color: var(--text);">{{ prop.area_sqm|default:"—" }} м²</strong>
+                                        </li>
+                                        <li class="list-group-item bg-transparent d-flex justify-content-between py-1 text-muted">
+                                            <span>Рівень мобільності:</span>
+                                            <strong style="color: var(--text);">{% if prop.mobility_level %}{{ prop.mobility_level }} / 5{% else %}—{% endif %}</strong>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- Елементи доступності та зручності -->
+                            {% if prop.features.all %}
+                            <div>
+                                <div class="fw-bold small text-muted mb-2">♿ Елементи доступності та зручності:</div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    {% for feat in prop.features.all %}
+                                    <span class="badge bg-secondary bg-opacity-25 text-body border px-2 py-1 small rounded-2">
+                                        {{ feat.name }}
+                                    </span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-3 text-center rounded-3 text-muted small" style="background: var(--accent-soft) !important; color: var(--text) !important;">
+                    ✨ Немає оголошень, що очікують на модерацію. Усі об'єкти перевірено!
+                </div>
+                {% endif %}
+            </div>
+
+            <hr class="my-4" style="border-color: var(--border);">
+
+            <!-- Блок 2: Заявки на аудит та оцінка доступності -->
+            <div class="admin-section">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h3 class="h6 font-weight-bold mb-0 d-flex align-items-center gap-2" style="color: var(--text);">
+                        <span>📋</span> Заявки на аудит та оцінка доступності
+                        {% if audit_requests %}
+                        <span class="badge bg-primary rounded-pill">{{ audit_requests|length }}</span>
+                        {% endif %}
+                    </h3>
+                </div>
+
+                {% if audit_requests %}
+                <div class="d-flex flex-column gap-3">
+                    {% for req in audit_requests %}
+                    <div class="p-3 rounded-3 border" style="background: var(--bg-card); border-color: var(--border) !important;">
+                        <form method="post" action="{% url 'properties:admin_update_audit_request' req.pk %}">
+                            {% csrf_token %}
+                            <div class="row g-3 align-items-center">
+                                <div class="col-lg-5">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <span class="badge {% if req.status == 'new' %}bg-danger{% elif req.status == 'in_progress' %}bg-warning text-dark{% elif req.status == 'completed' %}bg-success{% else %}bg-secondary{% endif %}">
+                                            {{ req.get_status_display }}
+                                        </span>
+                                        <strong style="color: var(--text);">Заявка #{{ req.pk }}</strong>
+                                        <span class="text-muted small">· {{ req.created_at|date:"d.m.Y H:i" }}</span>
+                                    </div>
+                                    <div class="small text-muted">
+                                        👤 <strong>{{ req.name }}</strong> ({{ req.phone }})
+                                        {% if req.email %} · {{ req.email }}{% endif %}
+                                    </div>
+                                    <div class="small mt-1" style="color: var(--text);">
+                                        📍 <strong>Адреса:</strong> {{ req.property_address }}
+                                        {% if req.property %}
+                                        (<a href="{% url 'properties:property_detail' req.property.pk %}" target="_blank">Об'єкт #{{ req.property.pk }}</a>)
+                                        {% endif %}
+                                    </div>
+                                    {% if req.comments %}
+                                    <div class="small text-muted italic mt-1">💬 "{{ req.comments }}"</div>
+                                    {% endif %}
+                                </div>
+
+                                <div class="col-lg-7">
+                                    <div class="row g-2 align-items-center">
+                                        <div class="col-6 col-sm-4">
+                                            <label class="form-label small mb-1">Статус заявки</label>
+                                            <select name="status" class="form-select form-select-sm rounded-2">
+                                                <option value="new" {% if req.status == 'new' %}selected{% endif %}>Нова</option>
+                                                <option value="in_progress" {% if req.status == 'in_progress' %}selected{% endif %}>В обробці</option>
+                                                <option value="completed" {% if req.status == 'completed' %}selected{% endif %}>Завершено</option>
+                                                <option value="cancelled" {% if req.status == 'cancelled' %}selected{% endif %}>Скасовано</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-6 col-sm-4">
+                                            <label class="form-label small mb-1">Рівень доступності</label>
+                                            <select name="mobility_level" class="form-select form-select-sm rounded-2">
+                                                <option value="">-- Не обрано --</option>
+                                                <option value="1" {% if req.property and req.property.mobility_level == "1" %}selected{% endif %}>1 (Повна)</option>
+                                                <option value="2" {% if req.property and req.property.mobility_level == "2" %}selected{% endif %}>2 (Висока)</option>
+                                                <option value="3" {% if req.property and req.property.mobility_level == "3" %}selected{% endif %}>3 (Середня)</option>
+                                                <option value="4" {% if req.property and req.property.mobility_level == "4" %}selected{% endif %}>4 (Базова)</option>
+                                                <option value="5" {% if req.property and req.property.mobility_level == "5" %}selected{% endif %}>5 (Низька)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-6 col-sm-4">
+                                            <label class="form-label small mb-1">Бал (0 - 10)</label>
+                                            <input type="number" step="0.1" min="0" max="10" name="total_score" class="form-control form-control-sm rounded-2" placeholder="напр. 8.5" value="{% if req.property and req.property.accessibility_audit %}{{ req.property.accessibility_audit.total_score|floatformat:1 }}{% endif %}">
+                                        </div>
+                                        <div class="col-12 text-end mt-2">
+                                            <button type="submit" class="btn btn-primary btn-sm px-3 rounded-2 fw-bold">
+                                                💾 Зберегти зміни
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-3 text-center rounded-3 text-muted small" style="background: var(--accent-soft) !important; color: var(--text) !important;">
+                    📋 Заявок на аудит поки немає.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<section class="profile-listings mb-4">
+    <h2 class="profile-section-title mb-3">Мої оголошення</h2>
+    {% if user_listings %}
+    <div class="listing-cards">
+        {% for prop in user_listings %}
+        <a href="{% url 'properties:property_detail' prop.pk %}" class="profile-listing-card card card-premium text-decoration-none d-block mb-3">
+            <div class="card-body py-3 px-4 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <span class="profile-listing-name">{{ prop.name }}</span>
+                <span class="profile-listing-meta">
+                    {% if prop.moderation_status == 'approved' %}
+                        <span class="badge profile-badge profile-badge--published">🟢 Схвалено</span>
+                        {% if prop.is_verified_by_admin %}
+                        <span class="badge profile-badge bg-success bg-opacity-25 text-success ms-1">✓ Фото перевірено</span>
+                        {% endif %}
+                    {% elif prop.moderation_status == 'pending' %}
+                        <span class="badge profile-badge" style="background: rgba(245, 158, 11, 0.2); color: #d97706;">⏳ На модерації</span>
+                    {% elif prop.moderation_status == 'rejected' %}
+                        <span class="badge profile-badge bg-danger text-white">🔴 Відхилено</span>
+                    {% else %}
+                        <span class="badge profile-badge profile-badge--draft">Чернетка</span>
+                    {% endif %}
+                    {% if prop.city %}<span class="text-muted small ms-2">{{ prop.city }}</span>{% endif %}
+                </span>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card card-premium profile-empty">
+        <div class="card-body text-center py-5 px-4">
+            <div class="profile-empty-icon mb-3" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+            <p class="text-muted mb-3">У вас ще немає оголошень.</p>
+            <a href="{% url 'properties:add_listing' %}" class="btn btn-primary px-4 py-2">Додати оголошення</a>
+        </div>
+    </div>
+    {% endif %}
+</section>
+</div>
+
+<style>
+.profile-page { max-width: 980px; }
+.profile-header-inner { background: linear-gradient(135deg, var(--section-alt) 0%, var(--bg-card) 100%); border-radius: 0; }
+[data-theme="dark"] .profile-header-inner { background: linear-gradient(135deg, var(--section-alt) 0%, var(--bg-card) 100%); }
+.profile-avatar {
+    width: 64px;
+    height: 64px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+.profile-avatar-text { line-height: 1; }
+.profile-title { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text) !important; }
+.profile-username { font-size: 1rem; color: var(--text); }
+.profile-btn-icon { opacity: 0.9; margin-right: 0.25rem; }
+.profile-section-title { font-size: 1.125rem; font-weight: 600; color: var(--text) !important; letter-spacing: -0.01em; }
+.profile-listing-card { 
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+    border: 1px solid var(--border) !important;
+}
+.profile-listing-card:hover { 
+    box-shadow: var(--shadow-hover); 
+    border-color: var(--accent) !important; 
+}
+[data-theme="dark"] .profile-listing-card {
+    border: 1px solid rgba(122, 156, 173, 0.3) !important;
+}
+[data-theme="dark"] .profile-listing-card:hover {
+    border-color: rgba(122, 156, 173, 0.8) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(122, 156, 173, 0.8) !important;
+}
+.profile-listing-name { font-weight: 500; color: var(--text) !important; }
+.profile-listing-meta { font-size: 0.875rem; }
+.profile-badge { font-size: 0.75rem; font-weight: 600; padding: 0.35rem 0.65rem; border-radius: var(--radius-sm); }
+.profile-badge--published { background: rgba(25, 135, 84, 0.15); color: #198754; }
+[data-theme="dark"] .profile-badge--published { background: rgba(25, 135, 84, 0.25); color: #75c997; }
+.profile-badge--draft { background: var(--accent-soft); color: var(--accent); }
+.profile-empty { border-style: dashed; }
+.profile-empty-icon { color: var(--text-muted); opacity: 0.7; }
+.profile-empty-icon svg { display: block; margin: 0 auto; }
+.profile-buttons-col { margin-top: 1rem; }
+@media (min-width: 768px) { .profile-buttons-col { margin-top: 1.25rem; margin-left: 0; } }
+.profile-action-buttons { margin-left: 0; }
+</style>
+{% endblock %}

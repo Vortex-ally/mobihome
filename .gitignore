@@ -1,0 +1,22 @@
+# База даних (локальна)
+data/
+*.sqlite3
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Django
+media/
+staticfiles/
+*.log
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+.env.*
+!.env.example
+htmlcov/
+.coverage
+.pytest_cache/

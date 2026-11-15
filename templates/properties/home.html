@@ -1,0 +1,1063 @@
+{% extends 'base.html' %}
+{% block title %}Каталог — mobi Home{% endblock %}
+
+{% block content %}
+<div class="wrap">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h1 class="mb-0" style="color: var(--text);">Каталог житла</h1>
+    <p class="text-muted mb-0" style="color: var(--text-muted);">Знайдено: <strong style="color: var(--text);">{{ total_count }}</strong> оголошень</p>
+</div>
+
+<div class="card card-premium mb-4 animate-on-scroll filter-block filter-block--airy border overflow-hidden" style="border-color: var(--border) !important;">
+    <div class="card-header py-3 d-flex align-items-center {% if not request.GET.accessibility_level and has_active_filters %}filter-expanded{% endif %}" style="background: var(--bg-card); border-color: var(--border); cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#filterCollapse" aria-expanded="{% if not request.GET.accessibility_level and has_active_filters %}true{% else %}false{% endif %}" aria-controls="filterCollapse" id="filterToggle">
+        <span class="filter-block-icon me-2" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        </span>
+        <h2 class="h6 mb-0 text-truncate flex-grow-1" style="color: var(--text);">Пошук і фільтри</h2>
+        <span class="accordion-collapse-icon ms-2" aria-hidden="true"></span>
+    </div>
+    <div id="filterCollapse" class="collapse {% if not request.GET.accessibility_level and has_active_filters %}show{% endif %}" data-bs-parent="">
+        <div class="card-body">
+            <!-- 1-Click DBN & Accessibility Level Presets -->
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-3 pb-3 border-bottom border-secondary border-opacity-25">
+                <span class="small text-muted fw-bold me-1">⭐ Рівні доступності:</span>
+                {% for L in mobility_levels %}
+                    {% if active_level == L.id|stringformat:"d" or mobility == L.id|stringformat:"d" %}
+                        <a href="{% url 'properties:catalog' %}" class="btn btn-sm rounded-pill py-1 px-3 bg-emerald-600 text-white fw-bold shadow-sm d-inline-flex align-items-center gap-1 active-level-btn" style="background-color: #059669; border-color: #059669; color: #ffffff !important; font-size: 0.8rem;" title="Скинути фільтр Рівень {{ L.id }}">
+                            [ Рівень {{ L.id }} ✕ ]
+                        </a>
+                    {% else %}
+                        <a href="?accessibility_level={{ L.id }}" class="btn btn-outline-secondary btn-sm rounded-pill py-1 px-3 level-btn" style="font-size: 0.8rem;">
+                            Рівень {{ L.id }}
+                        </a>
+                    {% endif %}
+                {% endfor %}
+
+                <span class="small text-muted fw-bold ms-lg-2 me-1">⚡ Пресети ДБН:</span>
+                <a href="?lift_80=1&no_thresholds=1" class="btn btn-outline-info btn-sm rounded-pill py-1 px-3" style="font-size: 0.8rem;">
+                    ♿ Ліфт ≥80см
+                </a>
+                <a href="?no_thresholds=1" class="btn btn-outline-success btn-sm rounded-pill py-1 px-3" style="font-size: 0.8rem;">
+                    🚪 Нульовий поріг (≤2см)
+                </a>
+                <a href="{% url 'properties:catalog' %}" class="btn btn-link btn-sm text-muted text-decoration-none ms-auto" style="font-size: 0.8rem;">
+                    Скинути фільтри
+                </a>
+            </div>
+
+<form method="get" class="mb-0 filter-form">
+    <div class="row g-3 align-items-end filter-form-row">
+        <div class="col-12 col-sm-6 col-md-4 col-lg-2 filter-field">
+            <label for="q" class="form-label small mb-1">Пошук</label>
+            <input type="search" name="q" id="q" class="form-control form-control-sm" value="{{ query }}" placeholder="Назва, адреса, місто...">
+        </div>
+        <div class="col-6 col-sm-4 col-md-3 col-lg-2 filter-field">
+            <label for="type" class="form-label small mb-1">Тип</label>
+            <select name="type" id="type" class="form-select form-select-sm">
+                <option value="">Усі</option>
+                <option value="sale" {% if listing_type == 'sale' %}selected{% endif %}>Продаж</option>
+                <option value="rent" {% if listing_type == 'rent' %}selected{% endif %}>Оренда</option>
+            </select>
+        </div>
+        <div class="col-6 col-sm-4 col-md-3 col-lg-2 filter-field">
+            <label for="city" class="form-label small mb-1">Місто</label>
+            <select name="city" id="city" class="form-select form-select-sm">
+                <option value="">Усі міста</option>
+                {% for c in cities %}
+                    <option value="{{ c }}" {% if city == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-4 col-sm-3 col-md-2 filter-field">
+            <label for="rooms" class="form-label small mb-1">Кімнат від</label>
+            <input type="number" name="rooms" id="rooms" class="form-control form-control-sm" value="{{ rooms }}" min="1" max="10" placeholder="—">
+        </div>
+        <div class="col-4 col-sm-3 col-md-2 filter-field">
+            <label for="rooms_max" class="form-label small mb-1">Кімнат до</label>
+            <input type="number" name="rooms_max" id="rooms_max" class="form-control form-control-sm" value="{{ rooms_max }}" min="1" max="10" placeholder="—">
+        </div>
+        <div class="col-4 col-sm-3 col-md-2 filter-field">
+            <label for="price_min" class="form-label small mb-1">Ціна від</label>
+            <input type="number" name="price_min" id="price_min" class="form-control form-control-sm" value="{{ price_min }}" min="0" placeholder="грн">
+        </div>
+        <div class="col-4 col-sm-3 col-md-2 filter-field">
+            <label for="price_max" class="form-label small mb-1">Ціна до</label>
+            <input type="number" name="price_max" id="price_max" class="form-control form-control-sm" value="{{ price_max }}" min="0" placeholder="грн">
+        </div>
+        <div class="col-4 col-sm-3 col-md-2 filter-field">
+            <label for="area_min" class="form-label small mb-1">Площа від (м²)</label>
+            <input type="number" name="area_min" id="area_min" class="form-control form-control-sm" value="{{ area_min }}" min="0" step="0.1" placeholder="—">
+        </div>
+        <div class="col-4 col-sm-3 col-md-2 filter-field">
+            <label for="area_max" class="form-label small mb-1">Площа до (м²)</label>
+            <input type="number" name="area_max" id="area_max" class="form-control form-control-sm" value="{{ area_max }}" min="0" step="0.1" placeholder="—">
+        </div>
+        <div class="col-12 col-md-6 col-lg-2 filter-field">
+            <label for="mobility" class="form-label small mb-1">Рівень доступності</label>
+            <select name="mobility" id="mobility" class="form-select form-select-sm filter-mobility-select">
+                <option value="">— Не вказано</option>
+                {% for L in mobility_levels %}
+                    <option value="{{ L.id }}" {% if mobility == L.id|stringformat:"d" or active_level == L.id|stringformat:"d" %}selected{% endif %}>Рівень {{ L.id }}: {{ L.short }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label small mb-1 d-block" style="color: var(--text);">Доступність</label>
+            <div class="d-flex flex-wrap gap-2">
+                <input class="btn-check" type="checkbox" name="lift_80" value="1" id="lift_80" {% if filter_lift %}checked{% endif %}>
+                <label class="filter-chip" for="lift_80">Ліфт &gt; 80 см</label>
+
+                <input class="btn-check" type="checkbox" name="shower_drain" value="1" id="shower_drain" {% if filter_shower %}checked{% endif %}>
+                <label class="filter-chip" for="shower_drain">Душ-трап</label>
+
+                <input class="btn-check" type="checkbox" name="no_thresholds" value="1" id="no_thresholds" {% if filter_no_thresholds %}checked{% endif %}>
+                <label class="filter-chip" for="no_thresholds">Без порогів</label>
+
+                <input class="btn-check" type="checkbox" name="turning_radius" value="1" id="turning_radius" {% if filter_turning %}checked{% endif %}>
+                <label class="filter-chip" for="turning_radius">Радіус для розвороту</label>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3 filter-field">
+            <label for="bathroom_type" class="form-label small mb-1">Тип санвузлу</label>
+            <select name="bathroom_type" id="bathroom_type" class="form-select form-select-sm">
+                <option value="">Усі</option>
+                {% for val, label in bathroom_type_choices %}
+                    <option value="{{ val }}" {% if bathroom_type == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12 col-md-6 col-lg-2 filter-field">
+            <label for="audit_score_min" class="form-label small mb-1">Мін. бал аудиту</label>
+            <select name="audit_score_min" id="audit_score_min" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for i in "123456789" %}
+                    <option value="{{ forloop.counter }}" {% if audit_score_min == forloop.counter|stringformat:"d" %}selected{% endif %}>{{ forloop.counter }}+</option>
+                {% endfor %}
+                <option value="10" {% if audit_score_min == "10" %}selected{% endif %}>10</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <input class="btn-check" type="checkbox" name="has_audit" value="1" id="has_audit" {% if filter_has_audit %}checked{% endif %}>
+                <label class="filter-chip" for="has_audit">Лише з проведеним аудитом</label>
+
+                <input class="btn-check" type="checkbox" name="verified" value="1" id="verified" {% if filter_verified %}checked{% endif %}>
+                <label class="filter-chip" for="verified">Перевірені оголошення</label>
+            </div>
+        </div>
+        {% if features %}
+        <div class="col-12 mt-2">
+            <h6 class="mb-3" style="color: var(--text);">Зручності</h6>
+            {% regroup features|dictsort:"category" by get_category_display as categorized_features %}
+            {% for group in categorized_features %}
+            <div class="mb-3">
+                <label class="form-label small mb-2 d-block fw-semibold" style="color: var(--text-muted) !important;">{{ group.grouper }}</label>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for f in group.list %}
+                        <input class="btn-check" type="checkbox" name="feature" value="{{ f.id }}" id="f{{ f.id }}" {% if f.id in selected_features %}checked{% endif %}>
+                        <label class="filter-chip" for="f{{ f.id }}">{{ f.name }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="col-12 col-md-4 col-lg-2 filter-sort-col">
+            <label for="sort" class="form-label small mb-1">Сортування</label>
+            <select name="sort" id="sort" class="form-select form-select-sm filter-sort-select">
+                <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Спочатку нові</option>
+                <option value="price_asc" {% if sort == 'price_asc' %}selected{% endif %}>Ціна ↑</option>
+                <option value="price_desc" {% if sort == 'price_desc' %}selected{% endif %}>Ціна ↓</option>
+                <option value="score" {% if sort == 'score' %}selected{% endif %}>За балом</option>
+            </select>
+        </div>
+        <div class="col-12 mt-2 pt-1 filter-actions-row">
+            <div class="d-flex gap-2 align-items-stretch flex-wrap">
+                <button type="submit" id="filterApplyBtn" class="btn btn-primary btn-sm filter-action-btn">Застосувати</button>
+                <a href="{% url 'properties:home' %}" class="btn btn-outline-secondary btn-sm filter-action-btn d-inline-flex align-items-center justify-content-center">Скинути</a>
+            </div>
+        </div>
+    </div> <!-- closes card-body -->
+  </div> <!-- closes #filterCollapse -->
+</div> <!-- closes card filter-block -->
+
+<div id="results-grid" style="scroll-margin-top: 90px;"></div>
+
+{% if request.GET.accessibility_level or active_level %}
+<div class="d-flex align-items-center justify-content-between mb-4 p-3.5 p-md-4 border rounded-4 animate-on-scroll shadow-sm" style="background: var(--bg-card); border-color: rgba(16, 185, 129, 0.4) !important; backdrop-filter: blur(12px);">
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <span class="badge px-3 py-2 rounded-3 text-white" style="background: rgba(6, 78, 59, 0.85); color: #6ee7b7 !important; border: 1px solid rgba(16, 185, 129, 0.5); font-size: 0.875rem; font-weight: 600;">
+      ⭐ Рівень {{ active_level|default:request.GET.accessibility_level }}
+    </span>
+    <h2 class="h5 font-bold mb-0" style="color: var(--text); font-weight: 700;">Квартири з обраним рівнем доступності</h2>
+  </div>
+  <a href="{% url 'properties:catalog' %}" class="small text-muted text-decoration-underline ms-auto hover-white" style="color: var(--text-muted);">
+    Показати всі квартири / Відкрити фільтри
+  </a>
+</div>
+{% endif %}
+
+<div class="catalog-grid">
+    {% for prop in page_obj %}
+        <div class="catalog-grid__item">
+            <a href="{% url 'properties:property_detail' prop.pk %}" class="text-decoration-none d-block h-100" style="color: inherit;">
+                <div class="card card-premium listing-card h-100 border-0 overflow-hidden">
+                    <div class="listing-card-img-wrap position-relative overflow-hidden">
+                    {% if prop.photo %}
+                        <img src="{{ prop.photo.url }}" class="card-img-top w-100 h-100 object-fit-cover" alt="{{ prop.name }}" loading="lazy" onerror="this.onerror=null;this.src='{{ prop.listing_photo_url }}';">
+                    {% else %}
+                        <img src="{{ prop.listing_photo_url }}" class="card-img-top w-100 h-100 object-fit-cover" alt="Фото квартири — {{ prop.name }}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600';">
+                    {% endif %}
+                        <div class="position-absolute top-0 start-0 listing-card-badges">
+                            <span class="listing-badge {% if prop.listing_type == 'sale' %}listing-badge--sale{% else %}listing-badge--rent{% endif %}">{{ prop.get_listing_type_display }}</span>
+                            {% if prop.is_verified_by_admin %}<span class="listing-badge listing-badge--verified"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-check-circle-fill me-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>Перевірено</span>{% endif %}
+                            {% if prop.audit and prop.audit.total_score is not None %}
+                                <span class="listing-badge listing-badge--audit" title="Оцінка аудиту доступності ДБН">
+                                    🛡️ {{ prop.audit.total_score|floatformat:0 }}/10
+                                </span>
+                            {% endif %}
+                            {% if prop.mobility_level %}
+                                <span class="listing-badge listing-badge--level" title="Рівень мобільності">
+                                    ⭐ Рівень {{ prop.mobility_level }}
+                                </span>
+                            {% endif %}
+                            {% if prop.featured_active %}<span class="listing-badge listing-badge--featured listing-badge--top">ТОП</span>{% endif %}
+                        </div>
+                        {% if prop.price %}
+                        <div class="listing-card-price-overlay">
+                            <h3 class="listing-card-price mb-0 text-white">
+                                {{ prop.price|floatformat:0 }} грн{% if prop.listing_type == 'rent' %}<span class="listing-card-price-period">/міс</span>{% endif %}
+                            </h3>
+                            {% if prop.price_per_sqm %}
+                            <div class="listing-card-price-meta text-white-50">
+                                <span>{{ prop.price_per_sqm|floatformat:0 }} грн/м²</span>
+                                {% if prop.price_per_sqm_usd %}<span class="listing-card-price-meta-usd">${{ prop.price_per_sqm_usd|floatformat:0 }}/м²</span>{% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="card-body d-flex flex-column listing-card-body p-3 p-md-4">
+                        <h2 class="h6 card-title mb-2 listing-card-title fw-bold text-truncate" style="color: var(--text);">{{ prop.name }}</h2>
+                        
+                        <p class="card-text small mb-3 listing-card-address d-flex align-items-center gap-1" style="color: var(--text-muted);">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="var(--accent)" class="bi bi-geo-alt" viewBox="0 0 16 16"><path d="M12.166 8.94c-.524 1.062-1.234 2.12-1.96 3.07A31.493 31.493 0 0 1 8 14.58a31.481 31.481 0 0 1-2.206-2.57c-.726-.95-1.436-2.008-1.96-3.07C3.304 7.867 3 6.862 3 6a5 5 0 0 1 10 0c0 .862-.305 1.867-.834 2.94zM8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10z"/><path d="M8 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 1a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+                            <span class="text-truncate">{% if prop.city %}{{ prop.city }}, {% endif %}{{ prop.address }}</span>
+                        </p>
+                        
+                        <div class="d-flex flex-wrap gap-3 small mb-3 listing-card-specs" style="color: var(--text);">
+                            {% if prop.rooms %}
+                            <div class="d-flex align-items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-door-open" viewBox="0 0 16 16"><path d="M8.5 10c-.276 0-.5-.448-.5-1s.224-1 .5-1 .5.448.5 1-.224 1-.5 1z"/><path d="M10.828.122A.5.5 0 0 1 11 .5V1h.5a.5.5 0 0 1 0 1h-1.114l-1.971-1.971c-.139-.139-.327-.183-.51-.128L2.708 2.057A.5.5 0 0 0 2 2.5V15a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.146-.354l-3-3a.5.5 0 0 0-.354-.146h-.672L8.5.122A.5.5 0 0 0 8 .5V1H7.5a.5.5 0 0 0 0 1h1.114l1.971 1.971c.139.139.327.183.51.128l5.197-1.732A.5.5 0 0 1 10.828.122zM3 15v-1h1v1H3zm2 0v-1h5v1H5zm6 0v-1h1v1h-1zM2 3.5v11h1v-11H2zm11 11V3.5h1v11h-1z"/></svg>
+                                <span>{{ prop.rooms }} кімн.</span>
+                            </div>
+                            {% endif %}
+                            {% if prop.area_sqm %}
+                            <div class="d-flex align-items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-bounding-box" viewBox="0 0 16 16"><path d="M5 2V0H0v5h2v6H0v5h5v-2h6v2h5v-5h-2V5h2V0h-5v2H5zm6 1v2h2v6h-2v2H5v-2H3V5h2V3h6zm1-2h3v3h-3V1zm3 11v3h-3v-3h3zM4 15H1v-3h3v3zM1 4V1h3v3H1z"/></svg>
+                                <span>{{ prop.area_sqm }} м²</span>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="listing-card-features small text-muted mb-3 d-flex flex-wrap gap-1">
+                            {% if prop.features.exists %}
+                                {% for f in prop.features.all|slice:":3" %}
+                                    <span class="listing-feature-chip">{{ f.name }}</span>
+                                {% endfor %}
+                                {% if prop.features.count > 3 %}
+                                    <span class="listing-feature-chip">+{{ prop.features.count|add:"-3" }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span>Зручності в описі</span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mt-auto pt-3 listing-card-actions">
+                            <button type="button" class="btn btn-sm rounded-3 compare-btn-card listing-card-btn d-inline-flex align-items-center justify-content-center gap-1.5" data-prop-id="{{ prop.id }}" onclick="event.preventDefault(); toggleCompare({{ prop.id }});">
+                                ⚖️ <span class="cmp-text">Порівняти</span>
+                            </button>
+                            <button type="button" class="btn btn-sm rounded-3 listing-card-btn listing-card-btn--view d-inline-flex align-items-center justify-content-center gap-1.5"
+                                data-id="{{ prop.id }}"
+                                data-name="{{ prop.name|escape }}"
+                                data-price="{% if prop.price %}{{ prop.price|floatformat:0 }}{% else %}—{% endif %}"
+                                data-city="{{ prop.city|default:'' }}"
+                                data-address="{{ prop.address|default:'' }}"
+                                data-photo="{{ prop.listing_photo_url|default:'' }}"
+                                data-audit="{% if prop.audit %}{{ prop.audit.total_score|floatformat:0 }}{% endif %}"
+                                data-mobility="{{ prop.mobility_level|default:'' }}"
+                                data-rooms="{{ prop.rooms|default:'' }}"
+                                data-area="{{ prop.area_sqm|default:'' }}"
+                                data-floor="{{ prop.floor|default:'' }}"
+                                data-total-floors="{{ prop.total_floors|default:'' }}"
+                                data-url="{% url 'properties:property_detail' prop.pk %}"
+                                onclick="event.preventDefault(); openQuickView(this);">
+                                👁️ Огляд
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+    {% endfor %}
+</div>
+
+{% if not page_obj %}
+    <div class="d-flex justify-content-center mt-5 mb-5 animate-on-scroll">
+        <div class="card border-0 text-center shadow-lg" style="max-width: 460px; border-radius: 28px; background: var(--bg-card); border: 1px solid var(--border) !important;">
+            <div class="card-body p-4 p-md-5">
+                <div class="mb-4 mx-auto d-flex align-items-center justify-content-center shadow-sm" style="width: 76px; height: 76px; background: var(--section-light); color: var(--accent); border-radius: 22px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-search-heart" viewBox="0 0 16 16"><path d="M6.5 4.482c1.664-1.673 5.825 1.254 0 5.018-5.825-3.764-1.664-6.69 0-5.018Z"/><path d="M13 6.5a6.471 6.471 0 0 1-1.258 3.844c.04.03.078.062.115.098l3.85 3.85a1 1 0 0 1-1.414 1.415l-3.85-3.85a1.007 1.007 0 0 1-.1-.115h.002A6.5 6.5 0 1 1 13 6.5ZM6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11Z"/></svg>
+                </div>
+                <h3 class="h4 fw-bold mb-3" style="color: var(--text);">Нічого не знайдено</h3>
+                {% if active_level %}
+                    <p class="text-muted mb-4 small" style="line-height: 1.6; opacity: 0.9;">
+                        Наразі немає квартир з {{ active_level }} рівнем доступності. Перегляньте інші варіанти або підпишіться на сповіщення.
+                    </p>
+                {% else %}
+                    <p class="text-muted mb-4 small" style="line-height: 1.6; opacity: 0.8;">
+                        За вашими критеріями наразі немає оголошень. Спробуйте змінити фільтри пошуку.
+                    </p>
+                {% endif %}
+                <a href="{% url 'properties:catalog' %}" class="btn btn-primary w-100 py-3 fw-bold" style="border-radius: 16px;">
+                    Скинути всі фільтри
+                </a>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
+{% if page_obj.has_other_pages %}
+    <nav aria-label="Пагінація" class="catalog-pagination mt-4 mt-md-5">
+        <ul class="pagination justify-content-center flex-wrap mb-0">
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}{% if query %}&q={{ query }}{% endif %}{% if listing_type %}&type={{ listing_type }}{% endif %}{% if city %}&city={{ city }}{% endif %}{% if rooms %}&rooms={{ rooms }}{% endif %}{% if rooms_max %}&rooms_max={{ rooms_max }}{% endif %}{% if price_min %}&price_min={{ price_min }}{% endif %}{% if price_max %}&price_max={{ price_max }}{% endif %}{% if area_min %}&area_min={{ area_min }}{% endif %}{% if area_max %}&area_max={{ area_max }}{% endif %}{% if active_level %}&accessibility_level={{ active_level }}{% elif mobility %}&mobility={{ mobility }}{% endif %}{% if filter_lift %}&lift_80=1{% endif %}{% if filter_shower %}&shower_drain=1{% endif %}{% if filter_no_thresholds %}&no_thresholds=1{% endif %}{% if filter_turning %}&turning_radius=1{% endif %}{% if bathroom_type %}&bathroom_type={{ bathroom_type }}{% endif %}{% if filter_has_audit %}&has_audit=1{% endif %}{% if audit_score_min %}&audit_score_min={{ audit_score_min }}{% endif %}{% if filter_verified %}&verified=1{% endif %}{% for fid in selected_features %}&feature={{ fid }}{% endfor %}{% if sort %}&sort={{ sort }}{% endif %}">{{ num }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+        </ul>
+    </nav>
+{% endif %}
+
+
+</div>
+{% endblock %}
+
+{% block extra_css %}
+
+<style>
+/* м’які тіні */
+/* Блок «Пошук і фільтри»: менш похмурий — більше повітря, м’якіший контур */
+.filter-block--airy.card { border-radius: 12px; }
+.filter-block--airy .card-header { padding: 0.875rem 1.25rem; }
+.filter-block--airy .card-body { padding: 1.25rem 1.5rem; background: var(--bg-card); }
+.filter-block--airy .form-control,
+.filter-block--airy .form-select { border-radius: 8px; }
+.filter-block--airy .form-label { margin-bottom: 0.35rem; }
+/* Вирівнювання сітки фільтрів: однакова висота полів, лейбли в один ряд */
+.filter-form-row .filter-field {
+    display: flex;
+    flex-direction: column;
+}
+.filter-form-row .filter-field .form-control,
+.filter-form-row .filter-field .form-select {
+    min-height: 2.25rem;
+    width: 100%;
+}
+.filter-form-row .filter-field .form-label {
+    flex-shrink: 0;
+    margin-bottom: 0.35rem;
+}
+/* Пропорційність: селект сортування та кнопки Застосувати/Скинути — одна висота, шрифт, радіус */
+.filter-block-icon { flex-shrink: 0; color: var(--accent); display: inline-flex; align-items: center; }
+
+/* Сітка каталогу: 1 / 2 / 3 колонки */
+.catalog-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    width: 100%;
+}
+@media (min-width: 640px) {
+    .catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+}
+@media (min-width: 1024px) {
+    .catalog-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+}
+.catalog-grid__item { min-width: 0; width: 100%; }
+
+@media (max-width: 639.98px) {
+    .wrap { padding-left: 16px; padding-right: 16px; }
+}
+
+/* Картки оголошень: тонкий контур, м’яка глибина, витончений hover */
+.card-premium.listing-card,
+.listing-card {
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--bg-card);
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+        0 10px 25px -5px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+    transition:
+        transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.15),
+        box-shadow 0.35s ease,
+        border-color 0.35s ease;
+}
+.card-premium.listing-card:hover,
+.listing-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(20, 184, 166, 0.35) !important;
+    box-shadow:
+        0 16px 40px -8px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(20, 184, 166, 0.25),
+        0 0 24px -4px rgba(20, 184, 166, 0.18);
+}
+[data-theme="light"] .card-premium.listing-card,
+[data-theme="light"] .listing-card {
+    border: 1px solid rgba(15, 23, 42, 0.08) !important;
+    box-shadow:
+        0 8px 20px -6px rgba(15, 23, 42, 0.12),
+        0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+[data-theme="light"] .card-premium.listing-card:hover,
+[data-theme="light"] .listing-card:hover {
+    border-color: rgba(20, 184, 166, 0.35) !important;
+    box-shadow:
+        0 14px 32px -8px rgba(15, 23, 42, 0.16),
+        0 0 0 1px rgba(20, 184, 166, 0.2);
+}
+/* Пагінація: центр, зручний тап */
+.catalog-pagination {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+.catalog-pagination .pagination {
+    gap: 0.5rem;
+    justify-content: center;
+    padding: 0;
+}
+.catalog-pagination .page-item { border: none; }
+.catalog-pagination .page-link {
+    border: none !important;
+    border-radius: 12px !important;
+    min-width: 40px;
+    min-height: 40px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.3s var(--ease-smooth);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.catalog-pagination .page-link:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.catalog-pagination .page-item.active .page-link {
+    background: var(--accent) !important;
+    color: #fff !important;
+    box-shadow: 0 8px 16px rgba(51, 70, 85, 0.25);
+}
+[data-theme="dark"] .catalog-pagination .page-link {
+    background: #1a2622;
+    color: #9ca3a6;
+}
+[data-theme="dark"] .catalog-pagination .page-link:hover {
+    background: #253340;
+    color: #fff;
+}
+
+.listing-card-img-wrap {
+    aspect-ratio: 16 / 10;
+    background: #0f172a;
+    width: 100%;
+}
+.listing-card-badges {
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    padding: 10px 12px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+.listing-card-price-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 2.5rem 0.85rem 0.85rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+    box-sizing: border-box;
+}
+.listing-card-price {
+    font-size: clamp(1rem, 3.5vw, 1.25rem);
+    font-weight: 800;
+    line-height: 1.25;
+}
+.listing-card-price-period {
+    font-size: 0.9em;
+    font-weight: 400;
+    opacity: 0.7;
+}
+.listing-card-price-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.5rem;
+    font-size: 0.78rem;
+    margin-top: 0.2rem;
+    line-height: 1.35;
+}
+.listing-card-price-meta-usd::before {
+    content: "· ";
+}
+@media (max-width: 480px) {
+    .listing-card-price-meta {
+        flex-direction: column;
+        gap: 0.1rem;
+    }
+    .listing-card-price-meta-usd::before {
+        content: none;
+    }
+}
+.card-img-top {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+}
+.card-premium:hover .card-img-top { transform: scale(1.05); }
+
+.listing-card-body { min-height: 0; }
+.listing-card-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.4;
+}
+.listing-card-address {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.listing-card-features {
+    position: relative;
+    min-height: 1.8em;
+    overflow: hidden;
+    padding-top: 0.85rem;
+    margin-top: 0.15rem;
+}
+.listing-card-features::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+    pointer-events: none;
+}
+[data-theme="light"] .listing-card-features::before {
+    background: linear-gradient(90deg, transparent, rgba(15, 23, 42, 0.12), transparent);
+}
+.listing-feature-chip {
+    background: rgba(255, 255, 255, 0.04);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+[data-theme="light"] .listing-feature-chip {
+    background: var(--bg);
+    border-color: rgba(15, 23, 42, 0.06);
+}
+.listing-card-audit { min-height: 1.5em; }
+
+/* Матові бейджі поверх фото */
+.listing-card .listing-badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    max-width: 100%;
+    white-space: nowrap;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.listing-card .listing-badge--top {
+    margin-left: auto;
+}
+@media (max-width: 639.98px) {
+    .listing-card .listing-badge {
+        font-size: 11px;
+        padding: 4px 7px;
+    }
+    .listing-card-badges {
+        padding: 8px 10px;
+        gap: 5px;
+    }
+}
+.listing-card .listing-badge--sale {
+    background: rgba(25, 135, 84, 0.55);
+    color: #fff;
+}
+.listing-card .listing-badge--rent {
+    background: rgba(13, 110, 253, 0.55);
+    color: #fff;
+}
+.listing-card .listing-badge--verified {
+    background: rgba(25, 135, 84, 0.5);
+    color: #fff;
+}
+.listing-card .listing-badge--audit {
+    background: rgba(15, 23, 42, 0.55);
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.35);
+}
+.listing-card .listing-badge--level {
+    background: rgba(15, 23, 42, 0.55);
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.35);
+}
+.listing-card .listing-badge--featured {
+    background: rgba(183, 167, 152, 0.55);
+    color: #051711;
+}
+
+/* Кнопки «Порівняти» / «Огляд» */
+.listing-card-actions {
+    border-top: none;
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+}
+.listing-card-actions::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+}
+[data-theme="light"] .listing-card-actions::before {
+    background: linear-gradient(90deg, transparent, rgba(15, 23, 42, 0.1), transparent);
+}
+.listing-card-btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    min-height: 44px;
+    height: 44px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: rgba(39, 39, 42, 0.55);
+    color: #e4e4e7;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+}
+.listing-card-btn:hover {
+    background: rgba(63, 63, 70, 0.75);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #fff;
+}
+.listing-card-btn--view {
+    background: rgba(22, 78, 99, 0.45);
+    color: #67e8f9;
+    border-color: rgba(103, 232, 249, 0.22);
+    font-weight: 600;
+}
+.listing-card-btn--view:hover {
+    background: rgba(22, 78, 99, 0.7);
+    border-color: rgba(103, 232, 249, 0.4);
+    color: #a5f3fc;
+    box-shadow: 0 0 16px -4px rgba(34, 211, 238, 0.25);
+}
+@media (max-width: 379.98px) {
+    .listing-card-actions {
+        flex-direction: column;
+    }
+    .listing-card-btn {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+}
+[data-theme="light"] .listing-card-btn {
+    background: rgba(15, 23, 42, 0.04);
+    color: var(--text);
+    border-color: rgba(15, 23, 42, 0.1);
+}
+[data-theme="light"] .listing-card-btn:hover {
+    background: rgba(15, 23, 42, 0.08);
+    border-color: rgba(15, 23, 42, 0.16);
+    color: var(--text);
+}
+[data-theme="light"] .listing-card-btn--view {
+    background: rgba(14, 116, 144, 0.08);
+    color: #0e7490;
+    border-color: rgba(14, 116, 144, 0.2);
+}
+[data-theme="light"] .listing-card-btn--view:hover {
+    background: rgba(14, 116, 144, 0.14);
+    border-color: rgba(14, 116, 144, 0.35);
+    color: #155e75;
+}
+/* Стиль селекта «Рівень доступності»: обраний пункт — суцільний акцент */
+.filter-mobility-select option:checked { background: var(--accent); color: #fff; }
+.filter-sort-col .filter-sort-select,
+.filter-actions-row .filter-action-btn {
+    height: 2.25rem;
+    min-height: 2.25rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    padding: 0.375rem 0.75rem;
+    line-height: 1.25;
+}
+.filter-sort-col .filter-sort-select { display: block; width: 100%; }
+.filter-actions-row .filter-action-btn { min-width: 7rem; text-align: center; }
+.filter-actions-row .btn-outline-secondary { border-width: 1px; }
+.filter-block .card-header { user-select: none; }
+.filter-block .accordion-collapse-icon { display: inline-block; width: 0; height: 0; border-left: 0.35rem solid transparent; border-right: 0.35rem solid transparent; border-top: 0.4rem solid currentColor; transition: transform 0.25s ease; opacity: 0.8; }
+.filter-block .card-header[aria-expanded="true"] .accordion-collapse-icon,
+.filter-block .card-header.filter-expanded .accordion-collapse-icon { transform: rotate(180deg); }
+.filter-mobility-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* Custom filter chips */
+.filter-chip {
+    display: inline-block;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text) !important;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8125rem;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+    margin-bottom: 0;
+}
+.filter-chip:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-soft);
+}
+.btn-check:focus + .filter-chip {
+    box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.25);
+}
+.btn-check:checked + .filter-chip {
+    background: var(--accent) !important;
+    color: #fff !important;
+    border-color: var(--accent) !important;
+    font-weight: 500;
+}
+[data-theme="dark"] .btn-check:checked + .filter-chip {
+    color: #0d1412 !important;
+    font-weight: 600;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+
+<script>
+(function() {
+    var form = document.querySelector('.filter-block form[method="get"]');
+    var btn = document.getElementById('filterApplyBtn');
+    if (!form || !btn) return;
+    function formSnapshot() {
+        var fd = new FormData(form);
+        var p = [];
+        fd.forEach(function(v, k) { p.push(k + '=' + encodeURIComponent(v)); });
+        return p.sort().join('&');
+    }
+    var initial = formSnapshot();
+    function check() {
+        btn.disabled = (formSnapshot() === initial);
+    }
+    form.addEventListener('change', check);
+    form.addEventListener('input', check);
+    check();
+})();
+</script>
+
+<!-- Quick Preview Modal -->
+<div id="quick-view-backdrop" class="position-fixed inset-0 bg-dark bg-opacity-75 z-3 d-none align-items-center justify-content-center p-3" style="top:0; left:0; right:0; bottom:0; backdrop-filter: blur(8px);">
+    <div class="card border-0 shadow-lg text-white p-4 mx-auto w-100 position-relative" style="max-width: 620px; background: #0f172a; border-radius: 24px; border: 1px solid rgba(255,255,255,0.12) !important;">
+        <button type="button" id="qv-close-btn" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" aria-label="Close"></button>
+        <div id="qv-body">
+            <div class="text-center py-4">
+                <div class="spinner-border text-info" role="status"></div>
+                <div class="small text-muted mt-2">Завантаження інформації об'єкта...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var qvFetchTimer = null;
+
+function renderModalContent(data) {
+    var body = document.getElementById('qv-body');
+    if (!body) return;
+
+    var photosHtml = data.photos && data.photos.length 
+        ? '<img src="' + data.photos[0] + '" class="w-100 h-100 object-fit-cover rounded-3">'
+        : '<div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted">Немає фото</div>';
+
+    var scoreHtml = data.audit_score 
+        ? '<span class="badge px-2.5 py-1 text-sky-400 rounded-3" style="background: rgba(14,165,233,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35); font-size: 0.78rem; font-weight: 600;">🛡️ Аудит: ' + data.audit_score + '/10</span>' 
+        : '<span class="badge bg-secondary px-2.5 py-1 rounded-3" style="font-size: 0.78rem;">Без аудиту</span>';
+
+    var mobilityHtml = data.mobility_level
+        ? '<span class="badge px-2.5 py-1 text-emerald-400 rounded-3 ms-1" style="background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(52,211,153,0.35); font-size: 0.78rem; font-weight: 600;">⭐ Рівень ' + data.mobility_level + '</span>'
+        : '';
+
+    var floorDisplay = '—';
+    var f = (data.floor || '').toString().trim();
+    var tf = (data.total_floors || '').toString().trim();
+    if (f && f !== '—') {
+        if (tf && tf !== '—') {
+            floorDisplay = f + ' з ' + tf;
+        } else {
+            floorDisplay = f;
+        }
+    }
+
+    body.innerHTML = `
+        <div class="row g-3 align-items-center">
+            <div class="col-md-6">
+                <div class="rounded-3 overflow-hidden shadow-sm" style="height: 230px; background: #000;">
+                    ${photosHtml}
+                </div>
+            </div>
+            <div class="col-md-6 d-flex flex-column justify-content-between">
+                <div>
+                    <div class="d-flex align-items-center gap-1 mb-2 flex-wrap">${scoreHtml}${mobilityHtml}</div>
+                    <h2 class="h5 fw-bold text-white mb-1">${data.name}</h2>
+                    <div class="text-muted small mb-2">📍 ${data.city}${data.address ? ', ' + data.address : ''}</div>
+                    <div class="fs-4 fw-bold text-info mb-3">${data.price} грн</div>
+                    <div class="small p-3 rounded-3 mb-1" style="background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(71, 85, 105, 0.4);">
+                        <div class="d-flex align-items-center justify-content-between mb-1.5">
+                            <span style="color: #94a3b8;">Кімнат:</span>
+                            <strong class="text-white fw-semibold">${data.rooms && data.rooms !== '—' ? data.rooms + ' кімн.' : '—'}</strong>
+                        </div>
+                        <div class="d-flex align-items-center justify-content-between mb-1.5">
+                            <span style="color: #94a3b8;">Площа:</span>
+                            <strong class="text-white fw-semibold">${data.area_sqm && data.area_sqm !== '—' ? data.area_sqm + ' м²' : '—'}</strong>
+                        </div>
+                        <div class="d-flex align-items-center justify-content-between">
+                            <span style="color: #94a3b8;">Поверх:</span>
+                            <strong class="text-white fw-semibold">${floorDisplay}</strong>
+                        </div>
+                    </div>
+                </div>
+                <a href="${data.url}" class="btn btn-info w-100 py-2.5 mt-3 fw-bold text-dark rounded-3 shadow-sm">Переглянути повну картку ➔</a>
+            </div>
+        </div>
+    `;
+}
+
+function openQuickView(el) {
+    var backdrop = document.getElementById('quick-view-backdrop');
+    var body = document.getElementById('qv-body');
+    if (!backdrop || !body) return;
+
+    backdrop.classList.remove('d-none');
+    backdrop.classList.add('d-flex');
+
+    var propertyId = null;
+    var name = '', price = '', city = '', address = '', photo = '', audit = '', mobility = '', rooms = '', area = '', floor = '', totalFloors = '', url = '';
+
+    if (typeof el === 'object' && el !== null) {
+        propertyId = el.getAttribute('data-id');
+        name = el.getAttribute('data-name') || '';
+        price = el.getAttribute('data-price') || '';
+        city = el.getAttribute('data-city') || '';
+        address = el.getAttribute('data-address') || '';
+        photo = el.getAttribute('data-photo') || '';
+        audit = el.getAttribute('data-audit') || '';
+        mobility = el.getAttribute('data-mobility') || '';
+        rooms = el.getAttribute('data-rooms') || '';
+        area = el.getAttribute('data-area') || '';
+        floor = el.getAttribute('data-floor') || '';
+        totalFloors = el.getAttribute('data-total-floors') || '';
+        url = el.getAttribute('data-url') || '';
+    } else {
+        propertyId = el;
+    }
+
+    if (name) {
+        renderModalContent({
+            name: name,
+            price: price,
+            city: city,
+            address: address,
+            photos: photo ? [photo] : [],
+            audit_score: audit,
+            mobility_level: mobility,
+            rooms: rooms,
+            area_sqm: area,
+            floor: floor,
+            total_floors: totalFloors,
+            url: url
+        });
+    } else {
+        body.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-info" role="status"></div>
+                <div class="small text-muted mt-2">Завантаження інформації об'єкта...</div>
+            </div>
+        `;
+    }
+
+    if (qvFetchTimer) clearTimeout(qvFetchTimer);
+
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    qvFetchTimer = setTimeout(function() {
+        if (controller) controller.abort();
+        if (!name) {
+            body.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="fs-2 mb-2">⚠️</div>
+                    <div class="text-white fw-bold mb-1">Час очікування вичерпано</div>
+                    <div class="small text-muted mb-3">Не вдалося завантажити детальні дані об'єкта.</div>
+                    <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-4" onclick="openQuickView('${propertyId}')">🔄 Повторити спробу</button>
+                </div>
+            `;
+        }
+    }, 5000);
+
+    var fetchOpts = controller ? { signal: controller.signal } : {};
+    fetch('/property/' + propertyId + '/quick-view/', fetchOpts)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            clearTimeout(qvFetchTimer);
+            renderModalContent(data);
+        })
+        .catch(function(err) {
+            clearTimeout(qvFetchTimer);
+            if (!name && (!err || err.name !== 'AbortError')) {
+                body.innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="fs-2 mb-2">📡</div>
+                        <div class="text-white fw-bold mb-1">Помилка з'єднання</div>
+                        <div class="small text-muted mb-3">Перевірте підключення до мережі.</div>
+                        <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-4" onclick="openQuickView('${propertyId}')">🔄 Повторити спробу</button>
+                    </div>
+                `;
+            }
+        });
+}
+
+document.getElementById('qv-close-btn')?.addEventListener('click', function() {
+    var backdrop = document.getElementById('quick-view-backdrop');
+    if (backdrop) {
+        backdrop.classList.remove('d-flex');
+        backdrop.classList.add('d-none');
+    }
+});
+</script>
+
+<!-- Floating Comparison Bar -->
+<div id="floating-compare-bar" class="position-fixed bottom-0 start-50 translate-middle-x mb-4 z-3 d-none align-items-center justify-content-between p-3 rounded-pill shadow-lg border border-info" style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(12px); min-width: 320px; max-width: 90%;">
+    <div class="d-flex align-items-center gap-2 text-white ps-2">
+        <span class="fs-5">⚖️</span>
+        <div>
+            <div class="fw-bold small text-white">Порівняння об'єктів</div>
+            <div id="compare-count-text" class="small text-info" style="font-size: 0.78rem;">Обрано 0 об'єктів (макс. 4)</div>
+        </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-3" onclick="clearCompare();" style="font-size: 0.8rem;">Очистити</button>
+        <a id="compare-launch-btn" href="{% url 'properties:compare_properties' %}" class="btn btn-sm btn-info rounded-pill px-3 fw-bold text-dark" style="font-size: 0.8rem;">Порівняти ➔</a>
+    </div>
+</div>
+
+<script>
+function getCompareList() {
+    var s = localStorage.getItem('mobihome_compare') || '';
+    return s.split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+
+function updateCompareUI() {
+    var list = getCompareList();
+    var bar = document.getElementById('floating-compare-bar');
+    var text = document.getElementById('compare-count-text');
+    var btn = document.getElementById('compare-launch-btn');
+
+    if (bar && text && btn) {
+        if (list.length > 0) {
+            bar.classList.remove('d-none');
+            bar.classList.add('d-flex');
+            text.textContent = 'Обрано ' + list.length + ' з 4 об\'єктів';
+            btn.href = '{% url "properties:compare_properties" %}?ids=' + list.join(',');
+        } else {
+            bar.classList.remove('d-flex');
+            bar.classList.add('d-none');
+        }
+    }
+
+    document.querySelectorAll('.compare-btn-card').forEach(function(b) {
+        var id = b.getAttribute('data-prop-id');
+        var txt = b.querySelector('.cmp-text');
+        if (list.indexOf(String(id)) !== -1) {
+            b.classList.remove('btn-outline-secondary');
+            b.classList.add('btn-info', 'text-dark', 'fw-bold');
+            if (txt) txt.textContent = 'У порівнянні';
+        } else {
+            b.classList.remove('btn-info', 'text-dark', 'fw-bold');
+            b.classList.add('btn-outline-secondary');
+            if (txt) txt.textContent = 'Порівняти';
+        }
+    });
+}
+
+function toggleCompare(id) {
+    var list = getCompareList();
+    var sId = String(id);
+    var idx = list.indexOf(sId);
+    if (idx !== -1) {
+        list.splice(idx, 1);
+    } else {
+        if (list.length >= 4) {
+            alert('Ви можете обрати максимум 4 об\'єкти для порівняння.');
+            return;
+        }
+        list.push(sId);
+    }
+    localStorage.setItem('mobihome_compare', list.join(','));
+    updateCompareUI();
+}
+
+function clearCompare() {
+    localStorage.removeItem('mobihome_compare');
+    updateCompareUI();
+}
+
+document.addEventListener('DOMContentLoaded', updateCompareUI);
+</script>
+{% endblock %}

@@ -1,0 +1,673 @@
+{% extends 'base.html' %}
+{% block title %}{{ property.name }} — mobi Home{% endblock %}
+
+{% block content %}
+<div class="wrap" style="font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;">
+{% if property.moderation_status == 'pending' %}
+<div class="alert alert-warning border-0 rounded-4 mb-4 d-flex align-items-center justify-content-between p-3.5 shadow-sm" style="background-color: rgba(245, 158, 11, 0.12); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.25);">
+    <div class="d-flex align-items-center gap-2.5">
+        <span class="fs-5">⏳</span>
+        <div style="font-size: 0.95rem;">
+            <strong>Оголошення на модерації:</strong> Заявка та фотографії перевіряються адміністратором.
+        </div>
+    </div>
+    <span class="badge bg-warning text-dark px-3 py-2 rounded-pill fw-semibold" style="font-size: 0.8rem;">На модерації</span>
+</div>
+{% elif property.moderation_status == 'rejected' %}
+<div class="alert alert-danger border-0 rounded-4 mb-4 p-3.5 shadow-sm" style="background-color: rgba(239, 68, 68, 0.12); color: #b91c1c; border: 1px solid rgba(239, 68, 68, 0.25);">
+    <div class="d-flex align-items-center justify-content-between mb-1">
+        <div class="d-flex align-items-center gap-2">
+            <span class="fs-5">❌</span>
+            <strong>Оголошення відхилено модератором</strong>
+        </div>
+        <span class="badge bg-danger px-3 py-2 rounded-pill fw-semibold" style="font-size: 0.8rem;">Відхилено</span>
+    </div>
+    {% if property.moderation_note %}
+    <p class="mb-0 mt-2 small"><strong>Причина:</strong> {{ property.moderation_note }}</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Заголовок оголошення, категорія та бейджі -->
+<div class="property-detail-header mb-4 mt-2">
+    <div class="d-flex flex-wrap gap-2 mb-2.5 align-items-center">
+        <span class="listing-badge {% if property.listing_type == 'sale' %}listing-badge--sale{% else %}listing-badge--rent{% endif %}" style="font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;">{{ property.get_listing_type_display }}</span>
+        {% if property.is_featured and featured_until_display %}<span class="listing-badge" style="background: var(--accent); color: var(--bg-card); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-star-fill me-1" viewBox="0 0 16 16"><path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/></svg>ТОП</span>{% endif %}
+        {% if property.is_verified_by_admin %}<span class="listing-badge" style="background: rgba(25, 135, 84, 0.12); color: #198754; border: 1px solid rgba(25, 135, 84, 0.3); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-check-circle-fill me-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>Фото перевірено</span>{% endif %}
+        {% if property.is_verified %}<span class="listing-badge" style="background: rgba(25, 135, 84, 0.12); color: #198754; border: 1px solid rgba(25, 135, 84, 0.3); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-check-circle-fill me-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>Перевірено</span>{% endif %}
+        {% if audit %}<span class="listing-badge" style="background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;">Аудит проведено</span>{% endif %}
+        {% if audit and audit.total_score is not None %}<span class="listing-badge" style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;"><strong>{{ audit.total_score|floatformat:0 }}</strong> / 10 балів</span>{% endif %}
+        {% if property.mobility_level %}<span class="listing-badge" style="background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;">Рівень {{ property.mobility_level }}</span>{% endif %}
+    </div>
+    
+    <div class="row align-items-end g-3">
+        <div class="col-12 col-md-8">
+            <h1 class="property-detail-title mb-1.5 fw-bold text-white tracking-tight" style="font-size: clamp(1.6rem, 3vw, 2.25rem); letter-spacing: -0.025em; line-height: 1.25;">{{ property.name }}</h1>
+            <p class="text-muted mb-0 d-flex align-items-center gap-1.5" style="color: var(--text-muted); font-size: 0.95rem; font-weight: 500;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="var(--accent)" class="bi bi-geo-alt-fill flex-shrink-0" viewBox="0 0 16 16"><path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>
+                <span>{% if property.city %}{{ property.city }}, {% endif %}{{ property.address }}</span>
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-5">
+    <!-- Ліва колонка: Галерея, Характеристики, Опис -->
+    <div class="col-lg-8">
+        
+        <!-- Геометрія Галереї та Мініатюр (Aspect 16/10) -->
+        <div class="property-gallery-container position-relative mb-4 overflow-hidden rounded-4 shadow-sm" style="border: 1px solid var(--border); background: #0b0f17; border-radius: 16px;">
+            {% if property_photos %}
+            <div id="domriaGallery" class="carousel slide carousel-fade" data-bs-ride="false">
+                <!-- Оверлей з лічильником фото та кнопкою повного екрану -->
+                <div class="position-absolute top-0 end-0 p-3 d-flex gap-2 align-items-center" style="z-index: 10;">
+                    <span id="galleryCounter" class="badge bg-dark bg-opacity-75 text-white px-3 py-2 rounded-pill" style="font-size: 0.8rem; backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.15);">
+                        📷 <span id="currentSlideNum">1</span> / {{ property_photos|length }}
+                    </span>
+                    <button type="button" class="btn btn-dark btn-sm bg-opacity-75 rounded-circle p-2 d-flex align-items-center justify-content-center border-0" style="width: 36px; height: 36px; backdrop-filter: blur(8px);" data-bs-toggle="modal" data-bs-target="#lightboxModal" title="Повний екран">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="white" viewBox="0 0 16 16"><path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/></svg>
+                    </button>
+                </div>
+
+                <!-- Головні кадри слайдера з однакової геометрією 16/10 -->
+                <div class="carousel-inner" style="aspect-ratio: 16/10; width: 100%;">
+                    {% for photo_url in property_photos %}
+                    <div class="carousel-item h-100 {% if forloop.first %}active{% endif %}" data-bs-interval="false">
+                        <img src="{{ photo_url }}" class="d-block w-100 h-100 object-fit-cover cursor-pointer" alt="{{ property.name }}" style="object-fit: cover; aspect-ratio: 16/10; cursor: pointer;" data-bs-toggle="modal" data-bs-target="#lightboxModal" onclick="setLightboxIndex({{ forloop.counter0 }})" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200';">
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if property_photos|length > 1 %}
+                <button class="carousel-control-prev" type="button" data-bs-target="#domriaGallery" data-bs-slide="prev" style="width: 10%;">
+                    <span class="carousel-control-prev-icon rounded-circle p-2.5 bg-dark bg-opacity-60" aria-hidden="true"></span>
+                </button>
+                <button class="carousel-control-next" type="button" data-bs-target="#domriaGallery" data-bs-slide="next" style="width: 10%;">
+                    <span class="carousel-control-next-icon rounded-circle p-2.5 bg-dark bg-opacity-60" aria-hidden="true"></span>
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Рядок мініатюр однакового розміру з симетричним відступом -->
+            {% if property_photos|length > 1 %}
+            <div class="p-3 bg-dark bg-opacity-40 border-top border-secondary border-opacity-25 overflow-x-auto d-flex gap-2.5 no-scrollbar" style="scroll-behavior: smooth;">
+                {% for photo_url in property_photos %}
+                <img src="{{ photo_url }}" class="domria-thumb rounded-3 {% if forloop.first %}border-2 active-thumb{% else %}opacity-75{% endif %}" alt="Мініатюра {{ forloop.counter }}" style="width: 84px; height: 60px; object-fit: cover; cursor: pointer; transition: all 0.2s ease; border-radius: 10px; {% if forloop.first %}border: 2px solid var(--accent); opacity: 1;{% else %}border: 2px solid transparent;{% endif %}" onclick="goToSlide({{ forloop.counter0 }})" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600';">
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% else %}
+            <div class="property-gallery-placeholder d-flex flex-column align-items-center justify-content-center" style="height: 380px; background: var(--bg-card); color: var(--text-muted);">
+                <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" fill="currentColor" class="bi bi-image text-muted mb-2" viewBox="0 0 16 16"><path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/><path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/></svg>
+                <span class="small">Фотографії відсутні</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Блок Ціни та Швидких Характеристик -->
+        <div class="card p-4 border-0 mb-4 shadow-sm" style="border-radius: 16px; background: var(--bg-card); border: 1px solid var(--border) !important;">
+            <div class="d-flex flex-wrap align-items-baseline justify-content-between gap-3 mb-4 pb-3 border-bottom" style="border-color: var(--border) !important;">
+                <div>
+                    <div class="text-muted small font-weight-bold text-uppercase mb-1" style="letter-spacing: 0.05em; font-size: 0.75rem;">Вартість об'єкта</div>
+                    {% if property.price %}
+                    <div class="d-flex align-items-baseline gap-2">
+                        <span class="display-6 fw-bold" style="color: var(--text); font-weight: 800;">{{ property.price|floatformat:0 }} грн</span>
+                        {% if property.listing_type == 'rent' %}<span class="fs-5 text-muted font-weight-normal">/ місяць</span>{% endif %}
+                    </div>
+                    {% if property.price_usd %}
+                    <div class="text-muted small mt-1" style="font-size: 0.9rem;">
+                        ≈ <strong>${{ property.price_usd|floatformat:0 }}</strong>
+                        {% if property.price_per_sqm %}
+                        · <span style="color: var(--accent); font-weight: 600;">{{ property.price_per_sqm|floatformat:0 }} грн/м²</span>
+                        {% if property.price_per_sqm_usd %} (${{ property.price_per_sqm_usd|floatformat:0 }}/м²){% endif %}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <span class="fs-4 text-muted">Ціна за домовленістю</span>
+                    {% endif %}
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1.5" style="font-size: 0.82rem;">
+                        <span style="font-size: 8px;">●</span> ⚡ Прямий контакт з власником
+                    </span>
+                    <span class="badge bg-secondary bg-opacity-10 text-muted border border-secondary border-opacity-25 rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1.5" style="font-size: 0.82rem;">
+                        Без комісії
+                    </span>
+                </div>
+            </div>
+
+            <!-- Сітка ключових характеристик (Key Features Grid) -->
+            <h3 class="h6 text-uppercase fw-bold text-muted mb-3" style="letter-spacing: 0.05em; font-size: 0.78rem;">Основні характеристики</h3>
+            <div class="row g-2.5">
+                {% if property.rooms %}
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16"><path d="M8.5 10c-.276 0-.5-.448-.5-1s.224-1 .5-1 .5.448.5 1-.224 1-.5 1z"/><path d="M10.828.122A.5.5 0 0 1 11 .5V1h.5a.5.5 0 0 1 0 1h-1.114l-1.971-1.971c-.139-.139-.327-.183-.51-.128L2.708 2.057A.5.5 0 0 0 2 2.5V15a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.146-.354l-3-3a.5.5 0 0 0-.354-.146h-.672L8.5.122A.5.5 0 0 0 8 .5V1H7.5a.5.5 0 0 0 0 1h1.114l1.971 1.971c.139.139.327.183.51.128l5.197-1.732A.5.5 0 0 1 10.828.122zM3 15v-1h1v1H3zm2 0v-1h5v1H5zm6 0v-1h1v1h-1zM2 3.5v11h1v-11H2zm11 11V3.5h1v11h-1z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Кімнат</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.rooms }} кімн.</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if property.area_sqm %}
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16"><path d="M5 2V0H0v5h2v6H0v5h5v-2h6v2h5v-5h-2V5h2V0h-5v2H5zm6 1v2h2v6h-2v2H5v-2H3V5h2V3h6zm1-2h3v3h-3V1zm3 11v3h-3v-3h3zM4 15H1v-3h3v3zM1 4V1h3v3H1z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Площа</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.area_sqm }} м²</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if property.price_per_sqm %}
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16"><path d="M2.5 1A1.5 1.5 0 0 0 1 2.5v11A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 13.5 1h-11zM2 2.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Ціна за 1 м²</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.price_per_sqm|floatformat:0 }} грн</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if property.mobility_level %}
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16"><path d="M5.338 1.59a61 61 0 0 0-2.837.856.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .75 0q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Доступність</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">Рівень {{ property.mobility_level }} / 5</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16"><path d="M8.707 1.5a1 1 0 0 0-1.414 0L.646 8.146a.5.5 0 0 0 .708.708L2 8.207V13.5A1.5 1.5 0 0 0 3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V8.207l.646.647a.5.5 0 0 0 .708-.708L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.707 1.5Z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Тип угоди</div>
+                            <div class="fw-bold fs-6" style="color: var(--text);">{{ property.get_listing_type_display }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-6 col-sm-4">
+                    <div class="p-3 rounded-3 h-100 d-flex align-items-center gap-3" style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+                        <div class="rounded-2 p-2 d-flex align-items-center justify-content-center" style="background: var(--accent-soft); width: 40px; height: 40px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="var(--accent)" viewBox="0 0 16 16"><path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>
+                        </div>
+                        <div>
+                            <div class="small text-muted" style="font-size: 0.8rem;">Місто</div>
+                            <div class="fw-bold fs-6 text-truncate" style="color: var(--text); max-width: 120px;">{{ property.city|default:"—" }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Опис та зручності -->
+        <div class="property-description-section mt-4 pt-2">
+            {% if property.is_verified_by_admin %}
+            <div class="alert border-0 rounded-4 p-4 mb-4 d-flex align-items-center gap-3 shadow-sm" style="background: rgba(25, 135, 84, 0.08); border: 1px solid rgba(25, 135, 84, 0.2) !important; border-radius: 16px;">
+                <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; background: #198754; color: #fff;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" class="bi bi-patch-check-fill" viewBox="0 0 16 16">
+                        <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
+                        <path d="M10.067.87a2.89 2.89 0 0 0-4.134 0l-.622.638-.89-.011a2.89 2.89 0 0 0-2.924 2.924l.01.89-.636.622a2.89 2.89 0 0 0 0 4.134l.637.622-.011.89a2.89 2.89 0 0 0 2.924 2.924l.89-.01.622.636a2.89 2.89 0 0 0 4.134 0l.622-.637.89.011a2.89 2.89 0 0 0 2.924-2.924l-.01-.89.636-.622a2.89 2.89 0 0 0 0-4.134l-.637-.622.011-.89a2.89 2.89 0 0 0-2.924-2.924l-.89.01-.622-.636zm.287 5.984-3 3a.75.75 0 0 1-1.08 0l-1.5-1.5a.75.75 0 1 1 1.08-1.08l.96.96 2.46-2.46a.75.75 0 0 1 1.08 1.08z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h6 class="mb-1 fw-bold text-success" style="font-size: 0.95rem;">Фотоперевірене оголошення</h6>
+                    <p class="mb-0 small" style="color: var(--text); opacity: 0.85;">Адміністратор особисто підтвердив фотографії та характеристики цього об'єкта.</p>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if property.description %}
+                <h2 class="h5 mb-3 fw-bold" style="color: var(--text);">Опис нерухомості</h2>
+                <div class="property-detail-description fs-6 mb-4 p-4 p-md-5 rounded-4 shadow-sm" style="background: var(--bg-card); border: 1px solid var(--border) !important; color: var(--text); line-height: 1.75; border-radius: 16px; white-space: pre-line;">{{ property.description }}</div>
+            {% endif %}
+            
+            {% if property.features.exists %}
+                {% if property.features.all %}
+                    <h2 class="h5 mt-4 mb-3 fw-bold" style="color: var(--text);">Зручності та оснащення</h2>
+                    <div class="row g-3">
+                        {% regroup property.features.all|dictsort:"category" by get_category_display as cat_features %}
+                        {% for group in cat_features %}
+                        <div class="col-12 col-md-6">
+                            <div class="card p-4 h-100 border-0 shadow-sm" style="background: var(--bg-card); border: 1px solid var(--border) !important; border-radius: 16px;">
+                                <h3 class="h6 mb-3 font-weight-bold" style="color: var(--accent) !important; font-size: 0.88rem; letter-spacing: 0.02em;">{{ group.grouper }}</h3>
+                                <ul class="list-unstyled mb-0 d-flex flex-column gap-2.5" style="color: var(--text); font-size: 0.92rem; font-weight: 500;">
+                                    {% for f in group.list %}
+                                    <li class="d-flex align-items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="var(--accent)" class="bi bi-check2-circle flex-shrink-0" viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 0 1 8.25-4.764.5.5 0 0 0 .5-.866A6.5 6.5 0 1 0 14.5 8a.5.5 0 0 0-1 0 5.5 5.5 0 1 1-11 0z"/><path d="M15.354 2.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>
+                                        <span>{{ f.name }}</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endif %}
+
+            <!-- Інтерактивна карта безбар'єрної інфраструктури (Радіус 500-1000м) -->
+            <div class="card p-4 mt-4 border-0 shadow-sm" style="background: var(--bg-card); border: 1px solid var(--border) !important; border-radius: 16px;">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div>
+                        <h2 class="h5 mb-1 fw-bold text-white">Безбар'єрна інфраструктура поруч</h2>
+                        <p class="text-muted small mb-0">Об'єкти доступності в радіусі 500–1000м навколо будинку</p>
+                    </div>
+                    <span class="badge bg-teal text-white px-3 py-1.5 rounded-pill" style="background: #0d9488;">Радіус 500м</span>
+                </div>
+
+                <div id="poi-map" class="rounded-3 overflow-hidden shadow-sm" style="height: 320px; width: 100%; z-index: 1;"></div>
+
+                <div class="row g-2 mt-3 pt-2 border-top border-secondary border-opacity-25 small text-white">
+                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
+                        <span class="badge bg-success rounded-circle p-1">💊</span> Аптека з пандусом (250м)
+                    </div>
+                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
+                        <span class="badge bg-info rounded-circle p-1">🚌</span> Низькопідлоговий дуобус (180м)
+                    </div>
+                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
+                        <span class="badge bg-primary rounded-circle p-1">🛒</span> Безбар'єрний Сільпо (420м)
+                    </div>
+                    <div class="col-6 col-md-3 d-flex align-items-center gap-1.5">
+                        <span class="badge bg-warning text-dark rounded-circle p-1">♿</span> Інклюзивна парковка (50м)
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS Map Script for Nearby POIs -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var mapContainer = document.getElementById('poi-map');
+        if (!mapContainer) return;
+
+        // Kyiv coordinates default or simulated property location
+        var lat = 50.4501;
+        var lng = 30.5234;
+
+        var map = L.map('poi-map').setView([lat, lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Main Property Marker
+        var mainIcon = L.divIcon({
+            html: '<div style="background:#0d9488; color:#fff; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid #fff; font-weight:bold; box-shadow:0 4px 10px rgba(0,0,0,0.5);">🏠</div>',
+            className: ''
+        });
+        L.marker([lat, lng], {icon: mainIcon}).addTo(map).bindPopup("<b>{{ property.name|escapejs }}</b><br>Головний вхід").openPopup();
+
+        // 500m Radius Circle
+        L.circle([lat, lng], {
+            color: '#0d9488',
+            fillColor: '#0d9488',
+            fillOpacity: 0.15,
+            radius: 500
+        }).addTo(map);
+
+        // POI Markers
+        var pois = [
+            {lat: lat + 0.0018, lng: lng + 0.0022, title: "💊 Аптека «Бажаємо Здоров'я»", desc: "Пандус 6%, автоматичні двері (250м)"},
+            {lat: lat - 0.0012, lng: lng - 0.0015, title: "🚌 Зупинка тролейбуса №18", desc: "Низький підлоговий покрив (180м)"},
+            {lat: lat + 0.0028, lng: lng - 0.0030, title: "🛒 Сільпо", desc: "Нульовий поріг, ліфт на 2 поверх (420м)"},
+            {lat: lat - 0.0005, lng: lng + 0.0008, title: "♿ Інклюзивне паркомісце", desc: "Розширене паркомісце з розміткою 3.5м (50м)"}
+        ];
+
+        pois.forEach(function(poi) {
+            var poiIcon = L.divIcon({
+                html: '<div style="background:#0f172a; color:#38bdf8; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid #38bdf8; font-size:12px;">📍</div>',
+                className: ''
+            });
+            L.marker([poi.lat, poi.lng], {icon: poiIcon}).addTo(map)
+                .bindPopup("<b>" + poi.title + "</b><br>" + poi.desc);
+        });
+    });
+    </script>
+    
+    <!-- Права колонка: Sticky Sidebar Контактів (Симетрія та Єдиний Радіус 16px) -->
+    <div class="col-lg-4">
+        <div class="sticky-top" style="top: 90px; z-index: 10;">
+            <div class="card border-0 shadow-lg" style="border-radius: 16px; background: var(--bg-card); border: 1px solid var(--border) !important; overflow: hidden;">
+                <!-- Шапка профілю продавця з акуратним зеленим статус-бейдж "● Власник" -->
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom" style="border-color: var(--border) !important;">
+                        {% if property.owner %}
+                        <div class="rounded-circle d-flex align-items-center justify-content-center shadow-sm flex-shrink-0" style="width: 50px; height: 50px; background: var(--accent-soft); color: var(--accent); font-size: 1.3rem; font-weight: 700;">
+                            {{ property.owner.username|make_list|first|upper }}
+                        </div>
+                        <div>
+                            <div class="fw-bold text-white mb-0.5" style="font-size: 1.08rem; letter-spacing: -0.01em;">{{ property.owner.username }}</div>
+                            <div class="d-flex align-items-center gap-1.5 mt-1">
+                                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 d-inline-flex align-items-center gap-1.5" style="font-size: 0.75rem; font-weight: 600;">
+                                    <span style="font-size: 8px; line-height: 1;">●</span> Власник
+                                </span>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="rounded-circle d-flex align-items-center justify-content-center shadow-sm flex-shrink-0" style="width: 50px; height: 50px; background: var(--section-alt); color: var(--text-muted); font-size: 1.3rem;">
+                            🏠
+                        </div>
+                        <div>
+                            <div class="fw-bold text-white" style="font-size: 1.08rem;">Офіційний менеджер</div>
+                            <span class="text-muted small">Контакт платформи</span>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Головна кнопка CTA «Показати телефон» (Висота 48px, Акцентна, Без Масивності) -->
+                    {% if property.contact_phone %}
+                    <div class="d-flex flex-column gap-2.5 mb-3">
+                        <button type="button" class="btn btn-primary w-100 fw-bold d-flex align-items-center justify-content-center gap-2 shadow-sm" style="height: 48px; border-radius: 12px; font-size: 1.02rem;" onclick="trackPhoneClick({{ property.pk }}); this.classList.add('d-none'); document.getElementById('phone-display').classList.remove('d-none');">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-telephone-fill" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.394.33.92.01 1.313l-1.543 1.83a10.025 10.025 0 0 0 4.29 4.29l1.83-1.543a1.75 1.75 0 0 1 1.313-.01l2.304 1.794a1.745 1.745 0 0 1 .163 2.61l-3.32 3.32a2.3 2.3 0 0 1-2.5.53C5.61 16.1 2.05 12.3 1.05 7.64a2.3 2.3 0 0 1 .53-2.5z"/></svg>
+                            <span>Показати телефон ({{ property.contact_phone|slice:":7" }}***)</span>
+                        </button>
+
+                        <a href="tel:{{ property.contact_phone|cut:' ' }}" id="phone-display" class="btn btn-outline-success w-100 fw-bold d-none d-flex align-items-center justify-content-center gap-2" style="height: 48px; border-radius: 12px; font-size: 1.05rem;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-telephone-outbound-fill" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.394.33.92.01 1.313l-1.543 1.83a10.025 10.025 0 0 0 4.29 4.29l1.83-1.543a1.75 1.75 0 0 1 1.313-.01l2.304 1.794a1.745 1.745 0 0 1 .163 2.61l-3.32 3.32a2.3 2.3 0 0 1-2.5.53C5.61 16.1 2.05 12.3 1.05 7.64a2.3 2.3 0 0 1 .53-2.5zM11 .5a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-1 0V1.707l-4.146 4.147a.5.5 0 0 1-.708-.708L14.293 1H11.5a.5.5 0 0 1-.5-.5z"/></svg>
+                            {{ property.contact_phone }}
+                        </a>
+                    </div>
+                    {% endif %}
+
+                    <!-- Кнопка завантаження Паспорта доступності -->
+                    <a href="{% url 'properties:download_passport' property.pk %}" target="_blank" class="btn btn-outline-info w-100 fw-bold d-flex align-items-center justify-content-center gap-2 mb-3" style="height: 44px; border-radius: 12px; font-size: 0.9rem; border: 1px solid var(--accent);">
+                        <span>📄 Завантажити Паспорт доступності (PDF)</span>
+                    </a>
+
+                    <!-- Другорядні Дії: 2-колонкова Сітка (grid grid-cols-2 gap-2) з висотою 44px -->
+                    <div class="d-flex flex-column gap-2 mb-3">
+                        {% if property.owner and property.owner.email %}
+                        <a href="mailto:{{ property.owner.email }}?subject=Запит щодо об'єкта {{ property.name|urlencode }}" class="btn btn-outline-primary w-100 fw-semibold d-flex align-items-center justify-content-center gap-2" style="height: 44px; border-radius: 12px; font-size: 0.9rem;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-envelope" viewBox="0 0 16 16"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4Zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1H2Zm13 2.383-4.708 2.825L15 11.105V5.383Zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.47A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741ZM1 11.105l4.708-2.897L1 5.383v5.722Z"/></svg>
+                            <span>Написати продавцю</span>
+                        </a>
+                        {% endif %}
+
+                        <div class="row g-2">
+                            <div class="col-6">
+                                {% if user.is_authenticated %}
+                                <button type="button" class="btn btn-outline-secondary w-100 fw-semibold d-flex align-items-center justify-content-center gap-1.5 btn-favorite {% if is_favorite %}btn-favorite--active{% endif %}" style="height: 44px; border-radius: 12px; font-size: 0.88rem;" data-property-pk="{{ property.pk }}" data-in-favorites="{{ is_favorite|yesno:'true,false' }}">
+                                    {% if is_favorite %}
+                                    <svg class="btn-favorite-icon btn-favorite-icon--fill me-1" width="16" height="16" viewBox="0 0 24 24" fill="var(--accent)" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                    {% else %}
+                                    <svg class="btn-favorite-icon btn-favorite-icon--outline me-1" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                    {% endif %}
+                                    <span class="btn-favorite-text">В обране</span>
+                                </button>
+                                {% else %}
+                                <a href="{% url 'properties:auth' %}?next={{ request.build_absolute_uri|urlencode }}" class="btn btn-outline-secondary w-100 fw-semibold d-flex align-items-center justify-content-center gap-1.5" style="height: 44px; border-radius: 12px; font-size: 0.88rem;">
+                                    <span>❤️ В обране</span>
+                                </a>
+                                {% endif %}
+                            </div>
+                            <div class="col-6">
+                                <button type="button" class="btn btn-outline-secondary w-100 fw-semibold d-flex align-items-center justify-content-center gap-1.5" style="height: 44px; border-radius: 12px; font-size: 0.88rem;" data-bs-toggle="modal" data-bs-target="#shareModal">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                                    <span>Поділитися</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if property.owner %}
+                    <a href="{% url 'properties:public_profile' property.owner.username %}" class="btn btn-light btn-sm w-100 text-muted border text-center d-flex align-items-center justify-content-center" style="height: 38px; border-radius: 10px; background: var(--bg); font-size: 0.84rem; font-weight: 500;">
+                        Всі оголошення автора ↗
+                    </a>
+                    {% endif %}
+
+                    <!-- Компактний Блок Дій Керування (Підняти у ТОП, Редагувати) -->
+                    {% if can_edit_audit %}
+                    <div class="mt-4 pt-3 border-top" style="border-color: var(--border) !important;">
+                        <div class="small text-muted font-weight-semibold mb-2" style="font-size: 0.78rem;">Керування оголошенням:</div>
+                        <div class="d-flex flex-column gap-2">
+                            {% if can_promote %}
+                            <a href="{% url 'properties:promote_listing' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: var(--bg); font-size: 0.85rem; color: #f59e0b; font-weight: 600; border: 1px solid rgba(245, 158, 11, 0.3);">
+                                <span style="color: #f59e0b; font-size: 1rem;">⭐</span> <span style="color: var(--text);">Підняти у ТОП</span>
+                            </a>
+                            {% endif %}
+                            <a href="{% url 'properties:auditor_form' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: var(--bg); font-size: 0.85rem; color: var(--text); font-weight: 500; border: 1px solid var(--border);">
+                                🛡️ <span style="color: var(--text);">Редагувати аудит</span>
+                            </a>
+                            <a href="{% url 'properties:delete_property' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: rgba(239, 68, 68, 0.08); font-size: 0.85rem; color: #ef4444; font-weight: 600; border: 1px solid rgba(239, 68, 68, 0.25);">
+                                🗑️ <span>Видалити оголошення</span>
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="mt-3 pt-3 border-top d-flex justify-content-between small" style="border-color: var(--border) !important; font-size: 0.85rem; color: var(--text-muted);">
+                        <span class="d-flex align-items-center gap-1">👁️ Перегляди: <strong class="fw-bold ms-1" style="color: var(--text);">{{ property.view_count }}</strong></span>
+                        <span class="d-flex align-items-center gap-1">ID: <strong class="fw-bold ms-1" style="color: var(--text);">#{{ property.pk }}</strong></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Секція результатів аудиту доступності -->
+{% if audit %}
+    <div class="audit-card mb-4 shadow-sm" style="overflow: hidden; border: 1px solid var(--border); border-radius: 16px;">
+        <div class="audit-card-body p-0">
+            <div class="audit-collapse-header d-flex align-items-center py-3 px-4" data-bs-toggle="collapse" data-bs-target="#auditCollapse" aria-expanded="false" aria-controls="auditCollapse" style="background: var(--bg-card); cursor: pointer;">
+                <h2 class="audit-card-title mb-0 flex-grow-1 h6 fw-bold" style="color: var(--text);">Результати аудиту доступності</h2>
+                <span class="audit-score-block me-3">
+                    <span class="audit-score-label small text-muted me-2">Загальний бал</span>
+                    <span class="audit-score-value badge bg-primary px-3 py-1.5 fs-6 rounded-pill">{{ audit.total_score|default:"—" }} / 10</span>
+                </span>
+                <span class="audit-collapse-icon text-muted">▼</span>
+            </div>
+            <div id="auditCollapse" class="collapse">
+                <div class="px-4 pb-4 pt-2" style="background: var(--bg-card);">
+                    <div class="audit-filter-row mb-3">
+                        <span class="audit-filter-label small fw-bold me-2">Фільтр:</span>
+                        <div class="audit-filter-btns d-inline-flex flex-wrap gap-1">
+                            <button type="button" class="audit-filter-btn btn btn-sm btn-outline-secondary active" data-status="">Усі</button>
+                            <button type="button" class="audit-filter-btn btn btn-sm btn-outline-success" data-status="Ідеально">Ідеально</button>
+                            <button type="button" class="audit-filter-btn btn btn-sm btn-outline-warning" data-status="Потребує покращення">Потребує покращення</button>
+                            <button type="button" class="audit-filter-btn btn btn-sm btn-outline-danger" data-status="Важкодоступно">Важкодоступно</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Критерій</th>
+                                    <th>Значення</th>
+                                    <th>Статус</th>
+                                    <th>Коментар</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in audit_rows %}
+                                    <tr data-audit-status="{{ row.2|default:'' }}">
+                                        <td class="fw-semibold">{{ row.0 }}</td>
+                                        <td>{{ row.1|default:"—" }}</td>
+                                        <td>
+                                            {% with status=row.2 %}
+                                                {% if status == "Ідеально" %}
+                                                    <span class="badge bg-success bg-opacity-25 text-success">{{ status }}</span>
+                                                {% elif status == "Потребує покращення" %}
+                                                    <span class="badge bg-warning bg-opacity-25 text-warning">{{ status }}</span>
+                                                {% elif status == "Важкодоступно" or status == "Недоступно" %}
+                                                    <span class="badge bg-danger bg-opacity-25 text-danger">{{ status }}</span>
+                                                {% else %}
+                                                    <span class="text-muted">{{ status }}</span>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </td>
+                                        <td class="small text-muted">{{ row.3|default:"—" }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="card border-0 shadow-sm mt-4 mb-4" style="background: var(--bg-card); border: 1px solid var(--border) !important; border-radius: 16px;">
+        <div class="card-body p-4 p-md-5 d-flex flex-column align-items-center text-center">
+            <div class="rounded-circle d-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px; background: var(--accent-soft);">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="var(--accent)" class="bi bi-shield-check" viewBox="0 0 16 16"><path d="M5.338 1.59a61 61 0 0 0-2.837.856.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .75 0q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453 7.15 7.15 0 0 1-1.084.672c-.25.143-.542.276-.851.39a2 2 0 0 1-1.282 0c-.31-.114-.601-.247-.851-.39a7 7 0 0 1-1.084-.672 11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43 63 63 0 0 1 5.072.56"/><path d="M10.854 5.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7.5 7.793l2.646-2.647a.5.5 0 0 1 .708 0"/></svg>
+            </div>
+            <h3 class="h6 fw-bold mb-2" style="color: var(--text);">Аудит доступності не проведено</h3>
+            <p class="text-muted mb-3.5 small" style="max-width: 520px; font-size: 0.88rem;">Проведення аудиту дає можливість дізнатися точні параметри безбар'єрності об'єкта.</p>
+            <a href="{% url 'properties:request_audit_property' property.pk %}" class="btn btn-outline-primary px-4 py-2 rounded-3 fw-bold small" style="border-radius: 12px;">
+                📋 Замовити аудит нерухомості
+            </a>
+        </div>
+    </div>
+{% endif %}
+</div><!-- .wrap -->
+
+<!-- Повноекранний Lightbox Modal для фото перегляду -->
+<div class="modal fade" id="lightboxModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content bg-black bg-opacity-95 text-white">
+            <div class="modal-header border-0 position-absolute top-0 w-100 p-3" style="z-index: 1050;">
+                <span class="badge bg-dark px-3 py-2 rounded-pill fs-6">📷 Повноекранний перегляд</span>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body p-0 d-flex align-items-center justify-content-center position-relative">
+                {% if property_photos %}
+                <div id="lightboxCarousel" class="carousel slide w-100 h-100 d-flex align-items-center" data-bs-ride="false">
+                    <div class="carousel-inner h-100 d-flex align-items-center">
+                        {% for photo_url in property_photos %}
+                        <div class="carousel-item {% if forloop.first %}active{% endif %} h-100 text-center">
+                            <img src="{{ photo_url }}" class="img-fluid mh-100 mw-100 object-fit-contain d-inline-block position-relative top-50 translate-middle-y" alt="Повнорозмірне фото {{ forloop.counter }}">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if property_photos|length > 1 %}
+                    <button class="carousel-control-prev" type="button" data-bs-target="#lightboxCarousel" data-bs-slide="prev" style="width: 12%;">
+                        <span class="carousel-control-prev-icon p-3.5 bg-dark bg-opacity-75 rounded-circle" aria-hidden="true"></span>
+                    </button>
+                    <button class="carousel-control-next" type="button" data-bs-target="#lightboxCarousel" data-bs-slide="next" style="width: 12%;">
+                        <span class="carousel-control-next-icon p-3.5 bg-dark bg-opacity-75 rounded-circle" aria-hidden="true"></span>
+                    </button>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно Поділитися -->
+<div class="modal fade" id="shareModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="border-radius: 16px; border: none; background: var(--bg-card);">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" style="color: var(--text); font-size: 1.1rem;">Поділитися</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 text-center">
+                <p class="small text-muted mb-3">Скопіюйте посилання для відправки у месенджерах:</p>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control form-control-sm rounded-start-3" id="shareUrlInput" value="{{ request.build_absolute_uri }}" readonly>
+                    <button class="btn btn-primary btn-sm rounded-end-3 px-3" type="button" onclick="copyShareUrl()">Копіювати</button>
+                </div>
+                <div id="copyAlert" class="small text-success d-none">✓ Посилання скопійовано!</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function goToSlide(index) {
+    const galleryEl = document.getElementById('domriaGallery');
+    if (galleryEl) {
+        const carousel = bootstrap.Carousel.getOrCreateInstance(galleryEl);
+        carousel.to(index);
+    }
+}
+
+function setLightboxIndex(index) {
+    const lightboxEl = document.getElementById('lightboxCarousel');
+    if (lightboxEl) {
+        const carousel = bootstrap.Carousel.getOrCreateInstance(lightboxEl);
+        carousel.to(index);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const domriaGallery = document.getElementById('domriaGallery');
+    if (domriaGallery) {
+        domriaGallery.addEventListener('slide.bs.carousel', function(e) {
+            const currentNum = document.getElementById('currentSlideNum');
+            if (currentNum) {
+                currentNum.textContent = e.to + 1;
+            }
+            const thumbs = document.querySelectorAll('.domria-thumb');
+            thumbs.forEach((thumb, idx) => {
+                if (idx === e.to) {
+                    thumb.style.borderColor = 'var(--accent)';
+                    thumb.style.opacity = '1';
+                } else {
+                    thumb.style.borderColor = 'transparent';
+                    thumb.style.opacity = '0.75';
+                }
+            });
+        });
+    }
+});
+
+function copyShareUrl() {
+    const input = document.getElementById('shareUrlInput');
+    if (input) {
+        input.select();
+        navigator.clipboard.writeText(input.value);
+        const alertEl = document.getElementById('copyAlert');
+        if (alertEl) {
+            alertEl.classList.remove('d-none');
+            setTimeout(() => alertEl.classList.add('d-none'), 3000);
+        }
+    }
+}
+
+function trackPhoneClick(id) {
+    var formData = new FormData();
+    formData.append('action', 'phone_click');
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch('/property/' + id + '/track-click/', {
+        method: 'POST',
+        body: formData
+    }).catch(function(e) { console.log(e); });
+}
+</script>
+
+<style>
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.cursor-pointer { cursor: pointer; }
+</style>
+{% endblock %}

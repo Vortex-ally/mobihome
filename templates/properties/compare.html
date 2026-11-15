@@ -1,0 +1,169 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Порівняння об'єктів — mobi home{% endblock %}
+
+{% block content %}
+<div class="wrap py-5">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 fw-bold text-white mb-1">Порівняння об'єктів</h1>
+            <p class="text-muted small mb-0">Порівняйте параметри ціни, площі та чеклисту доступності пліч-о-пліч</p>
+        </div>
+        <a href="{% url 'properties:home' %}" class="btn btn-outline-light btn-sm">
+            + Додати об'єкти з каталогу
+        </a>
+    </div>
+
+    {% if properties %}
+    <div class="table-responsive rounded-4 shadow-lg overflow-hidden border border-secondary border-opacity-25" style="background: var(--bg-card);">
+        <table class="table table-dark table-hover align-middle mb-0 text-center">
+            <thead>
+                <tr class="border-bottom border-secondary border-opacity-25">
+                    <th class="text-start p-4 bg-dark text-muted fw-normal" style="width: 220px;">Об'єкт</th>
+                    {% for prop in properties %}
+                    <th class="p-4 position-relative" style="min-width: 240px;">
+                        <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-2" onclick="removeFromCompare({{ prop.id }});" title="Видалити з порівняння"></button>
+                        <div class="position-relative mb-3 mx-auto rounded-3 overflow-hidden" style="height: 140px; background: #000;">
+                            {% if prop.listing_photo_url %}
+                            <img src="{{ prop.listing_photo_url }}" alt="{{ prop.name }}" class="w-100 h-100 object-fit-cover">
+                            {% else %}
+                            <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted">Немає фото</div>
+                            {% endif %}
+                        </div>
+                        <a href="{% url 'properties:property_detail' prop.pk %}" class="text-white text-decoration-none fw-bold d-block text-truncate mb-1" title="{{ prop.name }}">
+                            {{ prop.name }}
+                        </a>
+                        <div class="fs-5 fw-bold text-info mb-2">{{ prop.price|floatformat:0 }} грн</div>
+                        <a href="{% url 'properties:download_passport' prop.pk %}" class="btn btn-outline-info btn-sm py-1 px-3 rounded-pill" style="font-size: 0.75rem;">
+                            📄 Паспорт доступності
+                        </a>
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Basic Params -->
+                <tr>
+                    <td class="text-start px-4 text-muted">Місто та адреса</td>
+                    {% for prop in properties %}
+                    <td class="small">{{ prop.city }}, {{ prop.address }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="text-start px-4 text-muted">Кімнат / Площа</td>
+                    {% for prop in properties %}
+                    <td class="fw-semibold">{{ prop.rooms }} кімн. / {{ prop.area_sqm }} м²</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="text-start px-4 text-muted">Поверх</td>
+                    {% for prop in properties %}
+                    <td>{{ prop.floor }} з {{ prop.total_floors }}</td>
+                    {% endfor %}
+                </tr>
+
+                <!-- Audit Checklist Comparison -->
+                <tr class="table-active">
+                    <td colspan="{{ properties|length|add:1 }}" class="text-start px-4 fw-bold text-info text-uppercase small" style="letter-spacing: 0.05em; background: rgba(0,136,204,0.1);">
+                        Чеклист доступності за ДБН В.2.2-17
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="text-start px-4 text-muted">Бал доступності</td>
+                    {% for prop in properties %}
+                    <td>
+                        {% if prop.audit and prop.audit.total_score %}
+                        <span class="badge bg-info text-dark fs-6 px-3 py-1 fw-bold">{{ prop.audit.total_score }}/100</span>
+                        {% else %}
+                        <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="text-start px-4 text-muted">Вхідна група</td>
+                    {% for prop in properties %}
+                    <td class="small">
+                        {% if prop.audit %}
+                        {{ prop.audit.get_entrance_access_display }}
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="text-start px-4 text-muted">Ширина ліфта</td>
+                    {% for prop in properties %}
+                    <td>
+                        {% if prop.audit and prop.audit.lift_width_cm %}
+                        <span class="{% if prop.audit.lift_width_cm >= 80 %}text-success{% else %}text-warning{% endif %} fw-bold">
+                            {{ prop.audit.lift_width_cm }} см
+                        </span>
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="text-start px-4 text-muted">Висота порогів</td>
+                    {% for prop in properties %}
+                    <td>
+                        {% if prop.audit and prop.audit.thresholds_max_height_cm %}
+                        <span class="{% if prop.audit.thresholds_max_height_cm <= 2 %}text-success{% else %}text-warning{% endif %} fw-bold">
+                            ≤ {{ prop.audit.thresholds_max_height_cm }} см
+                        </span>
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="text-start px-4 text-muted">Радіус розвороту (≥150 см)</td>
+                    {% for prop in properties %}
+                    <td>
+                        {% if prop.audit %}
+                        {% if prop.audit.turning_radius_exists %}
+                        <span class="badge bg-success">✓ Є</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Ні</span>
+                        {% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="text-start px-4 text-muted">Тип санвузла</td>
+                    {% for prop in properties %}
+                    <td class="small">
+                        {% if prop.audit %}
+                        {{ prop.audit.get_bathroom_type_display }}
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card card-body text-center py-5 text-muted rounded-4 bg-dark border-secondary border-opacity-25">
+        <h2 class="h5 mb-2 text-white">Не обрано жодного об'єкта для порівняння</h2>
+        <p class="small mb-4">Перейдіть до каталогу та додайте 2–4 квартири для порівняння параметрів доступності.</p>
+        <a href="{% url 'properties:home' %}" class="btn btn-primary mx-auto py-2 px-4" style="max-width: 260px;">
+            Перейти до каталогу
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function removeFromCompare(id) {
+    var stored = localStorage.getItem('mobihome_compare') || '';
+    var list = stored.split(',').filter(function(x) { return x.trim() && x.trim() !== String(id); });
+    localStorage.setItem('mobihome_compare', list.join(','));
+    if (list.length > 0) {
+        window.location.href = '{% url "properties:compare_properties" %}?ids=' + list.join(',');
+    } else {
+        window.location.href = '{% url "properties:compare_properties" %}';
+    }
+}
+</script>
+{% endblock %}

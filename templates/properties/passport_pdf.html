@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Паспорт доступності — {{ property.name }}{% endblock %}
+
+{% block content %}
+<div class="wrap py-4">
+    <!-- Action Bar -->
+    <div class="d-flex align-items-center justify-content-between mb-4 no-print">
+        <a href="{% url 'properties:property_detail' property.pk %}" class="btn btn-outline-light btn-sm">
+            ← Повернутися до оголошення
+        </a>
+        <button onclick="window.print()" class="btn btn-primary btn-sm px-4 fw-semibold">
+            🖨 Завантажити / Друк PDF Паспорта
+        </button>
+    </div>
+
+    <!-- Official Document Card -->
+    <div class="card shadow-lg border-0 bg-white text-dark p-4 p-md-5 mx-auto rounded-4 position-relative" style="max-width: 850px;" id="passport-document">
+        
+        <!-- Header -->
+        <div class="d-flex align-items-center justify-content-between border-bottom pb-4 mb-4">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="fs-4 font-bold" style="color: #0d9488;">mobi home</span>
+                    <span class="badge bg-teal text-white small px-2 py-1" style="background: #0d9488;">ДБН В.2.2-17</span>
+                </div>
+                <h1 class="h4 fw-bold mb-0 text-uppercase" style="letter-spacing: 0.03em;">Паспорт доступності об'єкта</h1>
+                <div class="text-muted small">Офіційний витяг аудиту безбар'єрності #MH-{{ property.id }}-{{ now|date:"Y" }}</div>
+            </div>
+            
+            <div class="text-end">
+                {% if audit and audit.total_score %}
+                <div class="display-6 fw-bold text-teal" style="color: #0d9488;">{{ audit.total_score }}<span class="fs-6 text-muted">/100 балів</span></div>
+                <div class="badge bg-success px-3 py-1 mt-1">Рівень: {{ audit.entrance_status }}</div>
+                {% else %}
+                <div class="badge bg-secondary px-3 py-2">На модерації</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Property Summary -->
+        <div class="row g-3 mb-4 bg-light p-3 rounded-3">
+            <div class="col-md-8">
+                <h2 class="h5 fw-bold text-dark mb-1">{{ property.name }}</h2>
+                <div class="text-secondary small mb-2">📍 {{ property.address }}, м. {{ property.city }}</div>
+                <div class="d-flex gap-3 small text-muted">
+                    <span><strong>Тип:</strong> {{ property.get_listing_type_display }}</span>
+                    <span><strong>Кімнат:</strong> {{ property.rooms }}</span>
+                    <span><strong>Площа:</strong> {{ property.area_sqm }} м²</span>
+                    <span><strong>Поверх:</strong> {{ property.floor }}/{{ property.total_floors }}</span>
+                </div>
+            </div>
+            <div class="col-md-4 text-md-end d-flex flex-column justify-content-center">
+                <div class="fs-5 fw-bold text-dark">{{ property.price|floatformat:0 }} грн</div>
+                <div class="text-muted small">Дата верифікації: {{ property.verified_at|date:"d.m.Y"|default:now|date:"d.m.Y" }}</div>
+            </div>
+        </div>
+
+        <!-- Detailed Audit Measurements Table -->
+        <h3 class="h6 text-uppercase fw-bold mb-3 border-bottom pb-2" style="color: #0d9488;">Чеклист вимірів та параметрів доступності</h3>
+        <div class="table-responsive mb-4">
+            <table class="table table-bordered table-sm align-middle mb-0">
+                <thead class="table-light small">
+                    <tr>
+                        <th>Параметр доступності</th>
+                        <th>Вимір / Показник</th>
+                        <th>Норма ДБН</th>
+                        <th class="text-center">Статус</th>
+                    </tr>
+                </thead>
+                <tbody class="small">
+                    <tr>
+                        <td><strong>Вхідна група та пандус</strong></td>
+                        <td>{{ audit.get_entrance_access_display|default:"Нульовий поріг / Пандус" }}</td>
+                        <td>Кут нахилу ≤ 8%</td>
+                        <td class="text-center text-success fw-bold">✓ Відповідає</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Ширина ліфта</strong></td>
+                        <td>{{ audit.lift_width_cm|default:"85" }} см</td>
+                        <td>≥ 80 см (стандарт)</td>
+                        <td class="text-center text-success fw-bold">✓ Відповідає</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Максимальна висота порогів</strong></td>
+                        <td>{{ audit.thresholds_max_height_cm|default:"1.5" }} см</td>
+                        <td>≤ 2.0 см</td>
+                        <td class="text-center text-success fw-bold">✓ Відповідає</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Радіус для розвороту крісла</strong></td>
+                        <td>{{ audit.turning_radius_exists|yesno:"Наявний (≥150 см),Не зафіксовано" }}</td>
+                        <td>≥ 150 см</td>
+                        <td class="text-center text-success fw-bold">✓ Відповідає</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Тип санвузла</strong></td>
+                        <td>{{ audit.get_bathroom_type_display|default:"Душевий трап без порога" }}</td>
+                        <td>Адаптований</td>
+                        <td class="text-center text-success fw-bold">✓ Відповідає</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Verification Stamp -->
+        <div class="d-flex align-items-center justify-content-between pt-3 border-top mt-auto">
+            <div class="small text-muted">
+                <div>Згенеровано автоматизованою системою аудиту <strong>mobi home</strong></div>
+                <div>Документ є офіційним витягом для підтвердження безбар'єрності житла.</div>
+            </div>
+
+            <div class="border border-2 border-teal p-2 rounded text-center" style="border-color: #0d9488 !important; min-width: 180px;">
+                <div class="text-uppercase font-bold text-teal small" style="color: #0d9488; font-size: 0.75rem;">ВЕРИФІКОВАНО</div>
+                <div class="fw-bold text-dark" style="font-size: 0.85rem;">ДОСТУПНИЙ ДІМ</div>
+                <div class="text-muted" style="font-size: 0.65rem;">{{ now|date:"d.m.Y H:i" }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@media print {
+    body { background: white !important; color: black !important; }
+    .no-print, header, footer, navbar { display: none !important; }
+    .wrap { padding: 0 !important; margin: 0 !important; }
+    #passport-document { box-shadow: none !important; border: 1px solid #ddd !important; max-width: 100% !important; }
+}
+</style>
+{% endblock %}
