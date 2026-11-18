@@ -821,6 +821,8 @@ class Payment(models.Model):
     provider_transaction_id = models.CharField(
         "ID транзакції провайдера", max_length=64, unique=True, null=True, blank=True
     )
+    # Друге успішне списання за тим самим order_id (інший payment_id): потрібне рішення адміністратора.
+    needs_review = models.BooleanField("Потребує перевірки адміністратором", default=False, db_index=True)
     status = models.CharField(
         "Статус", max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.CREATED,
         db_index=True,
@@ -877,6 +879,8 @@ class Payment(models.Model):
         verbose_name = "Платіж"
         verbose_name_plural = "Платежі"
         ordering = ["-created_at"]
+        # Закриття перевірки подвійного списання (needs_review) — лише з цим дозволом, не всім staff.
+        permissions = [("review_payment", "Може закривати перевірку подвійного списання")]
         indexes = [
             models.Index(fields=["property", "status"], name="payment_property_status_idx"),
             models.Index(fields=["user", "created_at"], name="payment_user_created_idx"),
@@ -890,6 +894,14 @@ class Payment(models.Model):
                 condition=models.Q(period_start__isnull=True)
                 | models.Q(period_end__gt=models.F("period_start")),
                 name="payment_period_valid",
+            ),
+            # Не більше однієї незавершеної оплати на оголошення — захист від подвійного
+            # списання (дві вкладки, повторне натискання, паралельні запити) на рівні БД.
+            # Платежі з невідповідністю суми (error_message) обробляє адміністратор вручну.
+            models.UniqueConstraint(
+                fields=["property"],
+                condition=models.Q(status__in=["created", "pending"], applied_at__isnull=True, error_message=""),
+                name="one_open_payment_per_property",
             ),
         ]
 

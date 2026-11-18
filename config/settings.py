@@ -214,6 +214,23 @@ LIQPAY_PAYMENT_TTL_MINUTES = int(os.environ.get("LIQPAY_PAYMENT_TTL_MINUTES", "6
 # Публічна адреса сайту (https://домен) для server_url/result_url.
 SITE_URL = os.environ.get("SITE_URL", "").rstrip("/")
 
+# Fail-fast: неправильна production-конфігурація оплати зупиняє запуск (gunicorn/manage.py).
+# У DEBUG (локальна розробка) ті самі проблеми показує `manage.py check`, але запуск не блокується.
+if not DEBUG:
+    from properties.payment_config import startup_problems as _payment_startup_problems
+
+    _problems = _payment_startup_problems(
+        payments_enabled=PAYMENTS_ENABLED,
+        placement_required=PLACEMENT_PAYMENT_REQUIRED,
+        liqpay_kwargs=dict(
+            public_key=LIQPAY_PUBLIC_KEY, private_key=LIQPAY_PRIVATE_KEY, sandbox=LIQPAY_SANDBOX,
+            version=LIQPAY_API_VERSION, algorithm=LIQPAY_SIGNATURE_ALGORITHM,
+            site_url=SITE_URL, debug=DEBUG,
+        ),
+    )
+    if _problems:
+        raise ImproperlyConfigured("Некоректна конфігурація оплати: " + " | ".join(_problems))
+
 # Обмеження спроб входу
 LOGIN_THROTTLE_MAX_ATTEMPTS = int(os.environ.get("LOGIN_THROTTLE_MAX_ATTEMPTS", "5"))
 LOGIN_THROTTLE_WINDOW_SECONDS = int(os.environ.get("LOGIN_THROTTLE_WINDOW_SECONDS", "900"))

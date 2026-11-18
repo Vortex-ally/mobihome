@@ -11,7 +11,7 @@ from unittest import mock
 
 from django.core.checks import run_checks
 from django.core.management import call_command
-from django.db import OperationalError, close_old_connections, connection
+from django.db import close_old_connections, connection
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
@@ -134,8 +134,9 @@ class CheckoutTests(TestCase):
         self.assertContains(self.client.get(f"/payment/{self.prop.pk}/"), f"/payment/{self.prop.pk}/start/")
 
     def test_rate_limit(self):
+        # Не більше 10 нових оплат за годину на користувача (на одне оголошення — лише одна відкрита).
         for _ in range(12):
-            self.client.post(f"/payment/{self.prop.pk}/start/")
+            self.client.post(f"/payment/{make_property(owner=self.owner).pk}/start/")
         self.assertEqual(Payment.objects.count(), 10)
 
 
@@ -231,14 +232,15 @@ class CallbackTests(TestCase):
         self.assertEqual(self.payment.status, PaymentStatus.SUCCESS)
 
     def test_failure_error_pending_statuses(self):
+        # Окреме оголошення для кожного випадку: на одне оголошення — лише одна незавершена оплата.
         for status, expected in (("failure", PaymentStatus.FAILURE), ("error", PaymentStatus.FAILURE)):
-            p = create_payment(self.owner, self.live, is_test=True)
+            p = create_payment(self.owner, make_property(owner=self.owner), is_test=True)
             self.post(callback_body(p, status=status, err_code="limit"))
             p.refresh_from_db()
             self.assertEqual(p.status, expected)
             self.assertIn("limit", p.error_message)
         for status in ("3ds_verify", "processing", "wait_secure", "otp_verify"):
-            p = create_payment(self.owner, self.live, is_test=True)
+            p = create_payment(self.owner, make_property(owner=self.owner), is_test=True)
             self.post(callback_body(p, status=status))
             p.refresh_from_db()
             self.assertEqual(p.status, PaymentStatus.PENDING, status)
@@ -489,38 +491,44 @@ class ConfigChecksTests(TestCase):
 class ParallelCallbackTests(TransactionTestCase):
     """Кілька одночасних callback для одного платежу — зарахування рівно один раз."""
 
+    serialized_rollback = True  # flush видаляє тариф із міграції 0022; відновлюємо його
+
     def test_parallel_callbacks_credit_once(self):
+        import traceback
+
         owner = make_user("owner")
         start_end = timezone.now() + timedelta(days=5)
         prop = make_property(owner=owner, placement_until=start_end)
         payment = create_payment(owner, prop, is_test=True)
         body = callback_body(payment)
-        barrier = threading.Barrier(6)
+        n = 6
+        barrier = threading.Barrier(n)
         results, errors = [], []
 
         def worker():
             try:
-                barrier.wait()
+                barrier.wait(timeout=30)
                 results.append(liqpay.handle_callback(body["data"], body["signature"]).credited)
-            except OperationalError as exc:  # SQLite «database is locked» -> LiqPay повторить callback
-                errors.append(str(exc))
+            except Exception as exc:  # noqa: BLE001 — зберігаємо тип і traceback будь-якого винятку
+                errors.append({"type": type(exc).__name__, "message": str(exc), "traceback": traceback.format_exc()})
             finally:
                 close_old_connections()
                 connection.close()
 
-        threads = [threading.Thread(target=worker) for _ in range(6)]
+        threads = [threading.Thread(target=worker) for _ in range(n)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-        # Повтор після конкуренції (так зробить LiqPay, якщо отримав помилку). SQLite in-memory
-        # може відповісти «table is locked» усім потокам — тоді зарахує саме повтор.
+        # Допустима лише конкуренція SQLite «database (table) is locked» — LiqPay повторить callback.
+        unexpected = [e for e in errors if not (e["type"] == "OperationalError" and "locked" in e["message"])]
+        self.assertEqual(unexpected, [], "\n\n".join(e["traceback"] for e in unexpected))
+        self.assertEqual(len(results) + len(errors), n)
         retry = liqpay.handle_callback(body["data"], body["signature"])
         prop.refresh_from_db()
         payment.refresh_from_db()
         total_credited = results.count(True) + (1 if retry.credited else 0)
-        self.assertEqual(total_credited, 1, (results, errors, retry.note))
-        self.assertEqual(len(results) + len(errors), 6)
+        self.assertEqual(total_credited, 1, (results, [e["message"] for e in errors], retry.note))
         self.assertEqual(payment.status, PaymentStatus.SUCCESS)
         self.assertEqual(prop.placement_until, start_end + timedelta(days=30))
         self.assertEqual(Property.objects.get(pk=prop.pk).placement_until, payment.period_end)

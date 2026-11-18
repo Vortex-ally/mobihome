@@ -19,9 +19,9 @@ https://www.liqpay.ua/uk/doc/api/testing
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import logging
-import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -33,16 +33,19 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .models import Payment, PaymentEvent, PaymentStatus
+from .payment_config import ALLOWED_VERSION_ALGORITHMS, liqpay_problems
 from .placement import (
+    DuplicateChargeError,
     PlacementError,
     apply_successful_payment,
     mark_reversed,
     mark_unsuccessful,
+    payment_hold_window,
 )
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_ALGORITHMS = {"sha3_256": hashlib.sha3_256, "sha1": hashlib.sha1}
+HASHERS = {"sha3_256": hashlib.sha3_256, "sha1": hashlib.sha1}
 
 FAILURE_STATUSES = {"failure", "error"}
 PENDING_STATUSES = {
@@ -87,22 +90,11 @@ class LiqPayConfig:
 
     def problems(self):
         """Список проблем конфігурації (без значень ключів)."""
-        out = []
-        if not self.public_key or not self.private_key:
-            out.append("Не задано LIQPAY_PUBLIC_KEY / LIQPAY_PRIVATE_KEY.")
-        if self.algorithm not in SUPPORTED_ALGORITHMS:
-            out.append("LIQPAY_SIGNATURE_ALGORITHM має бути sha3_256 або sha1.")
-        if self.public_key:
-            is_sandbox_key = self.public_key.startswith("sandbox_")
-            if self.sandbox and not is_sandbox_key:
-                out.append("LIQPAY_SANDBOX=True, але ключ не тестовий (немає префікса sandbox_).")
-            if not self.sandbox and is_sandbox_key:
-                out.append("LIQPAY_SANDBOX=False (бойовий режим), але задано тестовий ключ sandbox_.")
-        if not settings.SITE_URL:
-            out.append("Не задано SITE_URL (потрібен для server_url і result_url).")
-        elif not settings.SITE_URL.startswith("https://") and not settings.DEBUG:
-            out.append("SITE_URL має бути https:// у бойовому середовищі.")
-        return out
+        return liqpay_problems(
+            public_key=self.public_key, private_key=self.private_key, sandbox=self.sandbox,
+            version=self.version, algorithm=self.algorithm,
+            site_url=settings.SITE_URL, debug=settings.DEBUG,
+        )
 
 
 def payments_active():
@@ -128,7 +120,9 @@ def decode_data(data):
 
 def make_signature(data, config=None):
     config = config or LiqPayConfig.from_settings()
-    hasher = SUPPORTED_ALGORITHMS.get(config.algorithm)
+    hasher = HASHERS.get(config.algorithm)
+    if (config.version, config.algorithm) not in ALLOWED_VERSION_ALGORITHMS:
+        raise LiqPayConfigError("Недозволена пара версії API та алгоритму підпису.")
     if hasher is None or not config.private_key:
         raise LiqPayConfigError("LiqPay не налаштовано.")
     digest = hasher((config.private_key + data + config.private_key).encode("utf-8")).digest()
@@ -139,11 +133,13 @@ def verify_signature(data, signature, config=None):
     """Криптографічно безпечне порівняння (hmac.compare_digest). Невалідні входи — False."""
     if not isinstance(data, str) or not isinstance(signature, str) or not data or not signature:
         return False
+    if not signature.isascii():
+        return False  # base64-підпис завжди ASCII; жодних «тихих» перетворень
     try:
         expected = make_signature(data, config)
     except LiqPayConfigError:
         return False
-    return hmac.compare_digest(expected.encode("ascii"), signature.encode("ascii", "ignore"))
+    return hmac.compare_digest(expected.encode("ascii"), signature.encode("ascii"))
 
 
 # --- Checkout ---
@@ -156,7 +152,8 @@ def _absolute(path):
 def build_checkout(payment, config=None):
     """Параметри Hosted Checkout. Сума/валюта/опис — лише з серверного запису платежу."""
     config = config or LiqPayConfig.from_settings()
-    expires = timezone.now() + timedelta(minutes=settings.LIQPAY_PAYMENT_TTL_MINUTES)
+    # Від створення платежу, а не від «зараз»: повторне «Продовжити» не подовжує життя форми.
+    expires = payment.created_at + timedelta(minutes=settings.LIQPAY_PAYMENT_TTL_MINUTES)
     params = {
         "version": config.version,
         "public_key": config.public_key,
@@ -177,8 +174,21 @@ def build_checkout(payment, config=None):
 # --- Обробка повідомлень (callback і відповідь на запит статусу) ---
 
 
+MAX_EVENT_VALUE_LENGTH = 255
+
+
 def _safe_payload(fields):
-    return {k: fields[k] for k in SAFE_EVENT_FIELDS if k in fields}
+    """Лише дозволені поля; рядки обрізаються, вкладені структури не зберігаються."""
+    out = {}
+    for key in SAFE_EVENT_FIELDS:
+        if key not in fields:
+            continue
+        value = fields[key]
+        if isinstance(value, (int, float, bool)) or value is None:
+            out[key] = value
+        else:
+            out[key] = str(value)[:MAX_EVENT_VALUE_LENGTH]
+    return out
 
 
 def _parse_paid_at(fields):
@@ -228,6 +238,11 @@ def _handle_success(fields, payment, status, config, log):
             transaction_id=fields.get("payment_id") or fields.get("transaction_id"),
             paid_at=_parse_paid_at(fields),
         )
+    except DuplicateChargeError:
+        # Подію [ALERT duplicate_charge] і позначку needs_review уже збережено в apply_successful_payment.
+        logger.error("LiqPay duplicate charge: order_id=%s payment_id=%s", payment.order_id,
+                     str(fields.get("payment_id") or fields.get("transaction_id"))[:64])
+        return ProcessResult(ok=True, note="duplicate_charge", payment=payment)
     except PlacementError as exc:
         log(f"Не зараховано: {exc}")
         return ProcessResult(ok=True, note="placement_error", payment=payment)
@@ -248,7 +263,14 @@ def _handle_other_status(fields, payment, status, log):
         log("Оплату відхилено.")
         return ProcessResult(ok=True, payment=payment, note="failure")
     if status == "reversed":
-        payment = mark_reversed(payment.pk)
+        provider_id = fields.get("payment_id") or fields.get("transaction_id")
+        try:
+            payment = mark_reversed(payment.pk, transaction_id=provider_id)
+        except DuplicateChargeError:
+            # Повернення ДРУГОГО списання: подію [ALERT duplicate_refund] уже збережено, перший платіж цілий.
+            logger.error("LiqPay duplicate refund: order_id=%s payment_id=%s", payment.order_id,
+                         str(provider_id)[:64])
+            return ProcessResult(ok=True, payment=payment, note="duplicate_reversed")
         log("Кошти повернено.")
         return ProcessResult(ok=True, payment=payment, note="reversed")
     if status in PENDING_STATUSES:
@@ -278,7 +300,7 @@ def process_payment_fields(fields, *, signature_valid, source, config=None):
         )
 
     if not signature_valid:
-        log("Відхилено: недійсний підпис.")
+        # Вміст неперевіреного повідомлення не зберігається (див. payment_views.liqpay_callback).
         return ProcessResult(ok=False, note="invalid_signature")
     rejection = _rejection_reason(fields, payment, config)
     if rejection:
@@ -291,12 +313,13 @@ def process_payment_fields(fields, *, signature_valid, source, config=None):
 
 def handle_callback(data, signature, config=None):
     config = config or LiqPayConfig.from_settings()
-    valid = verify_signature(data, signature, config)
-    fields = decode_data(data) if valid else (decode_data(data) or {})
-    if valid and fields is None:
+    if not verify_signature(data, signature, config):
+        return ProcessResult(ok=False, note="invalid_signature")
+    fields = decode_data(data)
+    if fields is None:
         PaymentEvent.objects.create(signature_valid=True, note="[callback] Некоректний формат data.")
         return ProcessResult(ok=False, note="bad_data")
-    return process_payment_fields(fields, signature_valid=valid, source="callback", config=config)
+    return process_payment_fields(fields, signature_valid=True, source="callback", config=config)
 
 
 # --- Серверний запит статусу ---
@@ -327,7 +350,9 @@ def fetch_status(payment, config=None):
               "order_id": payment.order_id}
     try:
         response = _post_api(params, config)
-    except (urllib.error.URLError, ValueError, TimeoutError) as exc:
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        # OSError охоплює URLError/HTTPError, тайм-аути, ConnectionReset/RemoteDisconnected;
+        # HTTPException — IncompleteRead тощо; ValueError — некоректний JSON.
         logger.warning("LiqPay status request failed for %s: %s", payment.order_id, exc.__class__.__name__)
         return ProcessResult(ok=False, note="network_error", payment=payment)
 
@@ -338,6 +363,10 @@ def fetch_status(payment, config=None):
         valid = isinstance(response, dict)
         fields = response if valid else {}
 
+    if not valid:
+        PaymentEvent.objects.create(payment=payment, order_id=payment.order_id, signature_valid=False,
+                                    note="[status] Некоректна або непідписана відповідь — проігноровано.")
+        return ProcessResult(ok=False, note="invalid_response", payment=payment)
     if fields.get("result") == "error" and fields.get("status") in (None, "", "error"):
         # LiqPay не знає такого замовлення (користувач не почав оплату) — лише фіксуємо.
         PaymentEvent.objects.create(payment=payment, order_id=payment.order_id, signature_valid=valid,
@@ -348,13 +377,13 @@ def fetch_status(payment, config=None):
         PaymentEvent.objects.create(payment=payment, order_id=payment.order_id, signature_valid=False,
                                     payload=_safe_payload(fields), note="[status] order_id у відповіді не збігається.")
         return ProcessResult(ok=False, note="order_mismatch", payment=payment)
-    return process_payment_fields(fields, signature_valid=valid, source="status", config=config)
+    return process_payment_fields(fields, signature_valid=True, source="status", config=config)
 
 
 def expire_stale(payment, now=None):
     """Позначає незавершений платіж простроченим після закінчення терміну на оплату."""
     now = now or timezone.now()
-    limit = payment.created_at + timedelta(minutes=settings.LIQPAY_PAYMENT_TTL_MINUTES + 30)
+    limit = payment.created_at + payment_hold_window()
     if not payment.is_final() and now > limit:
         return mark_unsuccessful(payment.pk, PaymentStatus.EXPIRED, "Оплату не завершено вчасно.")
     return payment

@@ -34,7 +34,28 @@
             {% if tariff %}
             <h2 class="h6 mb-2" style="color: var(--text);">{{ tariff.name }}</h2>
             <p class="small text-muted mb-3"><strong style="color: var(--text);">{{ tariff.price|floatformat:"0" }} грн</strong> за {{ tariff.duration_days }} днів розміщення одного оголошення.</p>
-            {% if payments_enabled %}
+            {% if payments_enabled and not can_pay %}
+            <p class="small text-muted mb-0">Оплату розміщення здійснює лише власник оголошення.</p>
+            {% elif payments_enabled and open_payment %}
+            <div class="alert alert-warning small mb-3" role="status">
+                Є незавершена оплата від {{ open_payment.created_at|date:"d.m.Y H:i" }}
+                ({{ open_payment.get_status_display|lower }}). Нову не створено, щоб уникнути подвійного списання.
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                {% if open_payment.status == 'created' %}
+                <form method="post" action="{% url 'properties:start_payment' property.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success px-4 py-2">Продовжити оплату</button>
+                </form>
+                {% else %}
+                <a href="{% url 'properties:payment_result' open_payment.order_id %}" class="btn btn-outline-secondary px-4 py-2">Переглянути стан</a>
+                {% endif %}
+                <form method="post" action="{% url 'properties:cancel_payment' open_payment.order_id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-link text-danger px-2 py-2">Скасувати оплату</button>
+                </form>
+            </div>
+            {% elif payments_enabled %}
             <form method="post" action="{% url 'properties:start_payment' property.pk %}">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-success btn-lg px-4 py-2">{% if property.placement_active %}Продовжити за{% else %}Оплатити{% endif %} {{ tariff.price|floatformat:"0" }} грн</button>

@@ -33,9 +33,12 @@ class Command(BaseCommand):
                                     created_at__lte=cutoff).order_by("created_at")[: options["limit"]]
         counts = {}
         for payment in qs:
-            result = liqpay.fetch_status(payment, config)
-            payment.refresh_from_db()
-            liqpay.expire_stale(payment)
-            counts[result.note] = counts.get(result.note, 0) + 1
+            try:
+                result_note = liqpay.fetch_status(payment, config).note
+                payment.refresh_from_db()
+                liqpay.expire_stale(payment)
+            except Exception as exc:  # один проблемний платіж не зупиняє обробку решти
+                result_note = f"error:{exc.__class__.__name__}"
+            counts[result_note] = counts.get(result_note, 0) + 1
         summary = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
         self.stdout.write(f"Оброблено: {sum(counts.values())}; {summary}")

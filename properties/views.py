@@ -1112,6 +1112,7 @@ def payment(request, pk):
     - історія платежів цього оголошення.
     """
     from .liqpay import payments_active
+    from .placement import can_pay_for, open_payment_for
 
     prop = get_object_or_404(Property, pk=pk)
     if not request.user.is_authenticated:
@@ -1143,6 +1144,8 @@ def payment(request, pk):
             "awaiting_activation": prop.payments.filter(
                 status="success", activated_at__isnull=True
             ).exists(),
+            "can_pay": can_pay_for(request.user, prop),
+            "open_payment": open_payment_for(prop),
         },
     )
 

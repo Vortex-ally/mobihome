@@ -1,0 +1,42 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Початок</a>
+  &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<p>Ви закриваєте перевірку подвійного списання. Буде знято <strong>лише</strong> позначку «Потребує перевірки».
+  Статус, суми, ID транзакції, дати й період розміщення не змінюються, ALERT-події залишаються в історії.
+  Переконайтеся, що зайве списання повернуто в LiqPay.</p>
+{% if skipped %}<p>Пропущено {{ skipped }} вибраних платежів без позначки «Потребує перевірки».</p>{% endif %}
+
+<form method="post">{% csrf_token %}
+  {% for payment, alerts, latest in rows %}
+  <h2>{{ payment.order_id }}</h2>
+  <ul>
+    <li>Статус платежу: {{ payment.get_status_display }}</li>
+    <li>Перевірка: {% if payment.needs_review %}потребує перевірки{% else %}закрита{% endif %}</li>
+    <li>Зарахована транзакція: {{ payment.provider_transaction_id|default:"—" }}</li>
+  </ul>
+  <table>
+    <thead><tr><th>Отримано</th><th>Подія</th></tr></thead>
+    <tbody>
+      {% for event in alerts %}<tr><td>{{ event.created_at|date:"d.m.Y H:i:s" }}</td><td>{{ event.note }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <input type="hidden" name="{{ action_checkbox_name }}" value="{{ payment.pk }}">
+  <input type="hidden" name="alerts_{{ payment.pk }}" value="{{ latest }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="mark_reviewed">
+  <input type="hidden" name="post" value="yes">
+  <p>
+    <input type="submit" value="Так, перевірено — закрити перевірку">
+    <a href="{% url opts|admin_urlname:'changelist' %}" class="button cancel-link">Ні, повернутися</a>
+  </p>
+</form>
+{% endblock %}

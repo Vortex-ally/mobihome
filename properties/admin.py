@@ -1,7 +1,10 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import User
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count, Q
+from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
@@ -120,6 +123,10 @@ class PaymentInline(admin.TabularInline):
 
 @admin.register(Property)
 class PropertyAdmin(admin.ModelAdmin):
+    def changelist_view(self, request, extra_context=None):
+        warn_duplicate_charges(request)  # модерація — сторінка, яку адміністратор бачить найчастіше
+        return super().changelist_view(request, extra_context)
+
     list_display = (
         "name",
         "owner",
@@ -424,19 +431,66 @@ class PaymentEventInline(admin.TabularInline):
         return False
 
 
+def warn_duplicate_charges(request):
+    """Помітне попередження: є друге успішне списання, яке потребує рішення (повернення коштів)."""
+    count = Payment.objects.filter(needs_review=True).count()
+    if count:
+        url = reverse("admin:properties_payment_changelist") + "?needs_review__exact=1"
+        messages.error(request, format_html(
+            "Увага: {} платіж(ів) із ДРУГИМ успішним списанням за тим самим order_id. Кошти не зараховано — "
+            'перевірте в LiqPay і поверніть зайве списання. <a href="{}">Показати</a>', count, url))
+
+
+REVIEW_CLOSED_NOTE = "[REVIEW closed]"
+
+
+def _alert_events(payment):
+    return PaymentEvent.objects.filter(payment=payment, note__startswith="[ALERT").order_by("id")
+
+
+def _latest_alert_id(payment):
+    return _alert_events(payment).values_list("id", flat=True).last() or 0
+
+
+def _close_review(request, model_admin, payment_pk, seen_alert_id):
+    """
+    Атомарно знімає лише needs_review. Рядок блокується (select_for_update): паралельні
+    спроби — одна подія. Якщо після сторінки підтвердження з'явилась нова ALERT-подія — не закриває.
+    """
+    with transaction.atomic():
+        payment = Payment.objects.select_for_update().filter(pk=payment_pk, needs_review=True).first()
+        if payment is None:
+            return "already"
+        if str(_latest_alert_id(payment)) != str(seen_alert_id):
+            return "changed"
+        Payment.objects.filter(pk=payment.pk).update(needs_review=False)  # лише цей прапорець
+        now = timezone.now()
+        alerts = list(_alert_events(payment).values_list("id", flat=True))
+        PaymentEvent.objects.create(
+            payment=payment, order_id=payment.order_id, signature_valid=False,
+            payload={"reviewed_by": request.user.get_username(), "reviewed_at": now.isoformat(),
+                     "alert_event_ids": alerts},
+            note=(f"{REVIEW_CLOSED_NOTE} Перевірку закрив {request.user.get_username()} "
+                  f"{timezone.localtime(now):%d.%m.%Y %H:%M}.")[:255],
+        )
+        model_admin.log_change(request, payment, "Закрито перевірку подвійного списання (needs_review знято).")
+    return "closed"
+
+
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
     """Фінансові записи: лише перегляд. Статус змінюється тільки підтвердженням провайдера."""
 
-    list_display = ("order_id", "status", "is_test", "property_link", "user_display", "amount", "currency",
-                    "paid_amount", "paid_at", "period_end", "created_at")
-    list_filter = ("status", "is_test", "provider", "currency", "created_at", "paid_at")
+    list_display = ("order_id", "status", "needs_review", "is_test", "property_link", "user_display", "amount",
+                    "currency", "paid_amount", "paid_at", "period_end", "created_at")
+    list_filter = ("needs_review", "status", "is_test", "provider", "currency", "created_at", "paid_at")
     search_fields = ("order_id", "provider_transaction_id", "user__username", "user__email",
                      "user_snapshot", "property__name", "=property__id")
     list_select_related = ("property", "user", "tariff")
     date_hierarchy = "created_at"
     list_per_page = 50
     inlines = [PaymentEventInline]
+    actions = ["mark_reviewed"]
 
     def get_readonly_fields(self, request, obj=None):
         return [f.name for f in self.model._meta.fields]
@@ -447,8 +501,52 @@ class PaymentAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return False  # лише перегляд (view permission)
 
+    def has_review_permission(self, request):
+        return request.user.has_perm("properties.review_payment")
+
+    def changelist_view(self, request, extra_context=None):
+        # Прямий POST дії без дозволу — 403 (інакше Django мовчки відхилив би невідому дію).
+        if request.method == "POST" and request.POST.get("action") == "mark_reviewed" \
+                and not self.has_review_permission(request):
+            raise PermissionDenied
+        warn_duplicate_charges(request)
+        return super().changelist_view(request, extra_context)
+
+    @admin.action(description="Позначити перевіреним (закрити перевірку подвійного списання)",
+                  permissions=["review"])
+    def mark_reviewed(self, request, queryset):
+        if not self.has_review_permission(request):
+            raise PermissionDenied
+        flagged = list(queryset.filter(needs_review=True).order_by("pk"))
+        if not flagged:
+            self.message_user(request, "Серед вибраних немає платежів, що потребують перевірки.", messages.WARNING)
+            return None
+        if request.POST.get("post") != "yes":
+            rows = [(p, list(_alert_events(p)), _latest_alert_id(p)) for p in flagged]
+            return TemplateResponse(request, "admin/properties/payment/confirm_review.html", {
+                **self.admin_site.each_context(request), "title": "Підтвердьте закриття перевірки",
+                "opts": self.model._meta, "rows": rows, "skipped": queryset.count() - len(flagged),
+                "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+            })
+        closed, changed = 0, 0
+        for p in flagged:
+            seen = request.POST.get(f"alerts_{p.pk}", "")
+            result = _close_review(request, self, p.pk, seen)
+            closed += result == "closed"
+            changed += result == "changed"
+        if closed:
+            self.message_user(request, f"Перевірку закрито: {closed}.", messages.SUCCESS)
+        if changed:
+            self.message_user(request, f"Не закрито {changed}: з'явились нові ALERT-події — перегляньте їх.",
+                              messages.ERROR)
+        return None
+
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        warn_duplicate_charges(request)
+        return super().change_view(request, object_id, form_url, extra_context)
 
     @admin.display(description="Оголошення", ordering="property__name")
     def property_link(self, obj):

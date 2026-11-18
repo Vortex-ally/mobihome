@@ -27,8 +27,8 @@ CHECKS = [
 INFO = [
     ("Оголошення без власника", "SELECT id FROM properties_property WHERE owner_id IS NULL"),
     ("Опубліковано, але не схвалено/не перевірено фото (у каталозі не видно)",
-     "SELECT id FROM properties_property WHERE is_published = 1 AND "
-     "(moderation_status <> 'approved' OR is_verified_by_admin = 0)"),
+     "SELECT id FROM properties_property WHERE is_published = TRUE AND "
+     "(moderation_status <> 'approved' OR is_verified_by_admin = FALSE)"),
     ("Зручності з порожнім slug", "SELECT id FROM properties_feature WHERE slug = '' OR slug IS NULL"),
 ]
 
@@ -54,12 +54,20 @@ class Command(BaseCommand):
             self.stdout.write("Таблиці properties_property немає — перевіряти нічого.")
             return
 
-        self.stdout.write(self.style.MIGRATE_HEADING("Блокери міграції 0021 (CheckConstraint):"))
+        self.stdout.write(self.style.MIGRATE_HEADING("Блокери міграцій 0021 і 0025:"))
         blockers = 0
         for title, sql in CHECKS:
             ids = self._ids(sql)
             blockers += len(ids)
             self._report(title, ids, self.style.ERROR)
+        if "properties_payment" in tables:
+            # Блокер 0025: кілька незавершених оплат одного оголошення. Вирішує адміністратор вручну.
+            ids = self._ids(
+                "SELECT property_id FROM properties_payment WHERE status IN ('created', 'pending') "
+                "AND applied_at IS NULL AND error_message = '' GROUP BY property_id HAVING COUNT(*) > 1"
+            )
+            blockers += len(ids)
+            self._report("Кілька незавершених оплат одного оголошення (блокує 0025)", ids, self.style.ERROR)
 
         self.stdout.write(self.style.MIGRATE_HEADING("Інформація:"))
         for title, sql in INFO:
@@ -68,12 +76,12 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING("Стара система ТОП (продаж припинено):"))
         now = timezone.now()
         active = self._ids(
-            "SELECT id FROM properties_property WHERE is_featured = 1 "
+            "SELECT id FROM properties_property WHERE is_featured = TRUE "
             "AND (featured_until IS NULL OR featured_until > %s)",
             [now],
         )
         unlimited = self._ids(
-            "SELECT id FROM properties_property WHERE is_featured = 1 AND featured_until IS NULL"
+            "SELECT id FROM properties_property WHERE is_featured = TRUE AND featured_until IS NULL"
         )
         self._report("Чинний ТОП (діятиме до своєї дати завершення)", active, self.style.WARNING)
         self._report("ТОП без дати завершення (безстроковий — потрібне рішення)", unlimited,
@@ -89,7 +97,7 @@ class Command(BaseCommand):
 
         if blockers:
             self.stdout.write(self.style.ERROR(
-                f"\nЗнайдено {blockers} записів, що заблокують міграцію 0021. "
+                f"\nЗнайдено {blockers} записів, що заблокують міграції 0021/0025. "
                 "Виправте їх вручну (через адмінку) перед `migrate`. Команда нічого не змінювала."
             ))
         else:
