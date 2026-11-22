@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import User
@@ -432,13 +435,21 @@ class PaymentEventInline(admin.TabularInline):
 
 
 def warn_duplicate_charges(request):
-    """Помітне попередження: є друге успішне списання, яке потребує рішення (повернення коштів)."""
+    """
+    Помітне попередження про платежі з needs_review: можливе подвійне списання — або друге успішне
+    списання за тим самим order_id (не зараховане), або кілька успішних оплат одного оголошення
+    через різні order_id (зараховані за чинними правилами) — або підтверджена LiqPay оплата з іншою
+    сумою/валютою (не зарахована) — або повернення коштів за зарахованим платежем. Рішення — за адміністратором.
+    """
     count = Payment.objects.filter(needs_review=True).count()
     if count:
         url = reverse("admin:properties_payment_changelist") + "?needs_review__exact=1"
         messages.error(request, format_html(
-            "Увага: {} платіж(ів) із ДРУГИМ успішним списанням за тим самим order_id. Кошти не зараховано — "
-            'перевірте в LiqPay і поверніть зайве списання. <a href="{}">Показати</a>', count, url))
+            "Увага: {} платіж(ів) потребують перевірки можливого подвійного списання — друге успішне "
+            "списання за тим самим order_id або кілька успішних оплат одного оголошення через різні order_id — "
+            "або невідповідності суми/валюти, підтвердженої LiqPay, або повернення коштів за зарахованим платежем. "
+            'Перевірте в LiqPay ALERT-події платежу і за потреби поверніть зайве списання вручну. '
+            '<a href="{}">Показати</a>', count, url))
 
 
 REVIEW_CLOSED_NOTE = "[REVIEW closed]"
@@ -449,7 +460,16 @@ def _alert_events(payment):
 
 
 def _latest_alert_id(payment):
-    return _alert_events(payment).values_list("id", flat=True).last() or 0
+    """
+    Версія ALERT-подій платежу для сторінки підтвердження: id останньої + відбиток вмісту. Подія
+    [ALERT duplicate_property_charge] оновлюється на місці (стає відомим ID транзакції другого
+    платежу), тож самого id недостатньо, щоб помітити нову інформацію.
+    """
+    events = list(_alert_events(payment).values_list("id", "note", "payload"))
+    if not events:
+        return "0"
+    digest = hashlib.sha256(json.dumps(events, sort_keys=True, ensure_ascii=False, default=str).encode())
+    return f"{events[-1][0]}-{digest.hexdigest()[:16]}"
 
 
 def _close_review(request, model_admin, payment_pk, seen_alert_id):
@@ -482,7 +502,8 @@ class PaymentAdmin(admin.ModelAdmin):
     """Фінансові записи: лише перегляд. Статус змінюється тільки підтвердженням провайдера."""
 
     list_display = ("order_id", "status", "needs_review", "is_test", "property_link", "user_display", "amount",
-                    "currency", "paid_amount", "paid_at", "period_end", "created_at")
+                    "currency", "paid_amount", "provider_transaction_id", "paid_at", "period_end", "created_at",
+                    "updated_at")
     list_filter = ("needs_review", "status", "is_test", "provider", "currency", "created_at", "paid_at")
     search_fields = ("order_id", "provider_transaction_id", "user__username", "user__email",
                      "user_snapshot", "property__name", "=property__id")

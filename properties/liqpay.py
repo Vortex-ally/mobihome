@@ -22,6 +22,7 @@ import hmac
 import http.client
 import json
 import logging
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -54,6 +55,9 @@ PENDING_STATUSES = {
     "3ds_verify", "captcha_verify", "cvv_verify", "ivr_verify", "otp_verify", "password_verify",
     "phone_verify", "pin_verify", "senderapp_verify",
 }
+PAYMENT_NOT_FOUND = "payment_not_found"  # err_code Status API: LiqPay не знає такого order_id
+# Спробу відхилено (напр. AntiFraud), але замовлення не закрите: можна оплатити ще раз тим самим order_id.
+TRY_AGAIN_STATUS = "try_again"
 # Поля, які зберігаються в журналі подій. Ім'я/телефон/маска картки платника НЕ зберігаються.
 SAFE_EVENT_FIELDS = (
     "action", "status", "order_id", "payment_id", "liqpay_order_id", "transaction_id", "amount",
@@ -213,11 +217,21 @@ def _rejection_reason(fields, payment, config):
     """Загальні перевірки повідомлення (крім підпису). None — усе гаразд."""
     if payment is None:
         return "unknown_order", "Відхилено: невідомий order_id."
-    if not hmac.compare_digest(str(fields.get("public_key", "")), config.public_key):
+    if not _same_ascii(fields.get("public_key"), config.public_key):
+        # _same_ascii: не-рядок або не-ASCII значення — розбіжність, а не TypeError у compare_digest.
         return "public_key_mismatch", "Відхилено: public_key не збігається з нашим."
     if fields.get("action") not in (None, "pay"):
         return "unexpected_action", f"Відхилено: неочікувана дія {fields.get('action')!r}."
     return None
+
+
+def _parse_amount(value):
+    """Decimal із поля amount або None. NaN/Infinity відкидаються: порівняння з sNaN кидає InvalidOperation."""
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        return None
+    return amount if amount.is_finite() else None
 
 
 def _handle_success(fields, payment, status, config, log):
@@ -227,9 +241,8 @@ def _handle_success(fields, payment, status, config, log):
     if payment.is_test and not config.sandbox:
         log("Відхилено: тестовий платіж не зараховується в бойовому режимі.")
         return ProcessResult(ok=True, note="test_payment_in_production", payment=payment)
-    try:
-        amount = Decimal(str(fields.get("amount")))
-    except (InvalidOperation, TypeError):
+    amount = _parse_amount(fields.get("amount"))
+    if amount is None:
         log("Відхилено: некоректна сума.")
         return ProcessResult(ok=True, note="bad_amount", payment=payment)
     try:
@@ -273,6 +286,15 @@ def _handle_other_status(fields, payment, status, log):
             return ProcessResult(ok=True, payment=payment, note="duplicate_reversed")
         log("Кошти повернено.")
         return ProcessResult(ok=True, payment=payment, note="reversed")
+    if status == TRY_AGAIN_STATUS:
+        # Не фінальний стан: нічого не зараховуємо й не закриваємо, пізній success ще буде зараховано.
+        # PENDING -> CREATED, щоб сторінка оплати знову дозволила «Продовжити» (той самий order_id).
+        Payment.objects.filter(
+            pk=payment.pk, status=PaymentStatus.PENDING, applied_at__isnull=True, error_message="",
+        ).update(status=PaymentStatus.CREATED, updated_at=timezone.now())
+        payment.refresh_from_db()
+        log("Спробу оплати відхилено (try_again) — можна оплатити ще раз.")
+        return ProcessResult(ok=True, payment=payment, note="try_again")
     if status in PENDING_STATUSES:
         if not payment.is_final():
             payment = mark_unsuccessful(payment.pk, PaymentStatus.PENDING, "")
@@ -280,6 +302,15 @@ def _handle_other_status(fields, payment, status, log):
         return ProcessResult(ok=True, payment=payment, note="pending")
     log("Невідомий статус — без змін.")
     return ProcessResult(ok=True, payment=payment, note="unknown_status")
+
+
+def last_attempt_try_again(payment):
+    """Чи останнє підписане повідомлення LiqPay щодо незавершеного платежу — try_again."""
+    if payment.status != PaymentStatus.CREATED:
+        return False
+    last = (PaymentEvent.objects.filter(payment=payment, signature_valid=True).exclude(provider_status="")
+            .order_by("-created_at", "-pk").values_list("provider_status", flat=True).first())
+    return last == TRY_AGAIN_STATUS
 
 
 def process_payment_fields(fields, *, signature_valid, source, config=None):
@@ -337,6 +368,16 @@ def _post_api(params, config, timeout=15):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _same_ascii(value, expected):
+    """
+    Порівняння значення з відповіді з очікуваним без винятків: hmac.compare_digest кидає TypeError
+    для не-ASCII рядків. Не рядок (число, список, словник) або не-ASCII — вважається розбіжністю.
+    """
+    if not isinstance(value, str) or not isinstance(expected, str) or not (value.isascii() and expected.isascii()):
+        return False
+    return hmac.compare_digest(value, expected)
+
+
 def fetch_status(payment, config=None):
     """
     Уточнює стан платежу запитом до LiqPay (action=status) і застосовує результат.
@@ -368,16 +409,54 @@ def fetch_status(payment, config=None):
                                     note="[status] Некоректна або непідписана відповідь — проігноровано.")
         return ProcessResult(ok=False, note="invalid_response", payment=payment)
     if fields.get("result") == "error" and fields.get("status") in (None, "", "error"):
-        # LiqPay не знає такого замовлення (користувач не почав оплату) — лише фіксуємо.
+        # «Не знайдено» — ЛИШЕ за явним кодом payment_not_found. Інша помилка API (або без коду) не
+        # підтверджує відсутність оплати: стан не змінюємо, платіж не закривається.
+        raw_code = fields.get("err_code")
+        # Лише точний рядок, без жодної нормалізації: очищений чи обрізаний код міг би «стати»
+        # payment_not_found і передчасно закрити платіж.
+        found = isinstance(raw_code, str) and raw_code == PAYMENT_NOT_FOUND
+        # Очищене значення — ЛИШЕ для тексту журналу (повне значення — у payload через _safe_payload).
+        err_code = re.sub(r"[^A-Za-z0-9_.-]", "", str(raw_code or ""))[:40]
+        # Поля не обов'язкові у відповіді про помилку, але якщо присутні — мають бути нашими.
+        conflict = [key for key, expected in (("order_id", payment.order_id), ("public_key", config.public_key))
+                    if fields.get(key) not in (None, "") and not _same_ascii(fields[key], expected)]
+        if conflict:
+            PaymentEvent.objects.create(
+                payment=payment, order_id=payment.order_id, signature_valid=False,
+                provider_status=str(fields.get("status", ""))[:32], payload=_safe_payload(fields),
+                note=f"[status] Відповідь про помилку з чужим {'/'.join(conflict)} — проігноровано.",
+            )
+            return ProcessResult(ok=False, note="error_response_mismatch", payment=payment)
+        note = ("[status] Платіж у LiqPay не знайдено." if found
+                else f"[status] Помилка API LiqPay ({err_code or 'без коду'}) — стан платежу не змінено.")
         PaymentEvent.objects.create(payment=payment, order_id=payment.order_id, signature_valid=valid,
-                                    provider_status=str(fields.get("status", "")),
-                                    payload=_safe_payload(fields), note="[status] Платіж у LiqPay не знайдено.")
+                                    provider_status=str(fields.get("status", ""))[:32],
+                                    payload=_safe_payload(fields), note=note)
+        if not found:
+            return ProcessResult(ok=False, note="api_error", payment=payment)
         return ProcessResult(ok=True, note="not_found", payment=payment)
     if str(fields.get("order_id", "")) != payment.order_id:
         PaymentEvent.objects.create(payment=payment, order_id=payment.order_id, signature_valid=False,
                                     payload=_safe_payload(fields), note="[status] order_id у відповіді не збігається.")
         return ProcessResult(ok=False, note="order_mismatch", payment=payment)
     return process_payment_fields(fields, signature_valid=True, source="status", config=config)
+
+
+# Відповіді Status API, після яких прострочений незавершений платіж можна закрити: LiqPay не знає
+# замовлення або остання спроба не пройшла. Помилка мережі/підпису/звірки, «ще обробляється» чи
+# невідомий статус — НЕ підтвердження невдачі: платіж лишається відкритим (нова оплата не створюється).
+EXPIRABLE_STATUS_NOTES = {"not_found", TRY_AGAIN_STATUS}
+
+
+def is_stale(payment, now=None):
+    return not payment.is_final() and (now or timezone.now()) > payment.created_at + payment_hold_window()
+
+
+def expire_if_confirmed(payment, status_result, now=None):
+    """Закриває прострочений платіж (EXPIRED) лише після достовірної відповіді Status API (fetch_status)."""
+    if status_result.ok and status_result.note in EXPIRABLE_STATUS_NOTES:
+        return expire_stale(payment, now)
+    return payment
 
 
 def expire_stale(payment, now=None):

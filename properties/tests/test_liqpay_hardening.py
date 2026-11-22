@@ -8,6 +8,7 @@ import threading
 import traceback
 from datetime import timedelta
 from datetime import timezone as dt_timezone
+from decimal import Decimal
 from io import StringIO
 from pathlib import Path
 from unittest import mock
@@ -303,7 +304,9 @@ class A5A6OpenPaymentAndOwnerTests(TestCase):
     def test_stale_open_payment_expires_and_is_replaced(self):
         first = self.client.post(self.start_url).context["payment"]
         Payment.objects.filter(pk=first.pk).update(created_at=timezone.now() - timedelta(hours=3))
-        second = self.client.post(self.start_url).context["payment"]
+        with mock.patch.object(liqpay, "_post_api", return_value={"result": "error", "status": "error",
+                                                                  "err_code": "payment_not_found"}):
+            second = self.client.post(self.start_url).context["payment"]  # LiqPay: замовлення не знайдено
         first.refresh_from_db()
         self.assertEqual(first.status, PaymentStatus.EXPIRED)
         self.assertNotEqual(first.order_id, second.order_id)
@@ -438,19 +441,27 @@ class DuplicateChargeTests(_CreditedPaymentBase):
     def test_same_payment_id_repeat_is_idempotent(self):
         self.send(111)
         first = self.state()
+        before = self.finance()
         for _ in range(3):
             self.assertEqual(self.send(111).status_code, 200)
         self.assertEqual(self.state(), first)
+        self.assertEqual(self.finance(), before)  # status, paid_amount, period_end, applied_at — без змін
         self.assertEqual(first, ("111", self.until + timedelta(days=30)))
+        self.assertEqual(self.payment.status, PaymentStatus.SUCCESS)
+        self.assertEqual(self.payment.period_end, self.until + timedelta(days=30))
+        self.assertEqual(PaymentEvent.objects.filter(payment=self.payment, note__contains="Оплату зараховано").count(), 1)
         self.assertFalse(self.payment.needs_review)
         self.assertFalse(_alerts(self.payment).exists())
 
     def test_other_payment_id_after_success_is_flagged_not_credited(self):
         self.send(111)
         first = self.state()
+        before = self.finance()
         resp = self.send(222, sender_card_mask2="424242*42", sender_phone="380000000000")
         self.assertEqual(resp.status_code, 200)  # прийнято, щоб LiqPay не повторював без кінця
         self.assertEqual(self.state(), first)  # перший payment_id і термін не змінились
+        self.assertEqual(self.finance(), before)  # сума, period_end, applied_at — без змін
+        self.assertEqual(self.payment.paid_amount, Decimal("99.00"))
         self.assertTrue(self.payment.needs_review)
         self.assertEqual(self.payment.status, PaymentStatus.SUCCESS)
         event = _alerts(self.payment).get()
@@ -465,10 +476,12 @@ class DuplicateChargeTests(_CreditedPaymentBase):
     def test_repeated_second_payment_id_creates_single_alert(self):
         self.send(111)
         first = self.state()
+        before = self.finance()
         for _ in range(4):
             self.send(222)
         self.send(333)
         self.assertEqual(self.state(), first)
+        self.assertEqual(self.finance(), before)
         self.assertEqual(
             _alert_ids(self.payment), ["222", "333"])
         self.assertEqual(Payment.objects.filter(needs_review=True).count(), 1)
@@ -487,14 +500,14 @@ class DuplicateChargeTests(_CreditedPaymentBase):
         self.client.force_login(make_admin())
         for url in ("/admin/properties/payment/", "/admin/properties/property/",
                     f"/admin/properties/payment/{self.payment.pk}/change/"):
-            self.assertContains(self.client.get(url), "ДРУГИМ успішним списанням", msg_prefix=url)
+            self.assertContains(self.client.get(url), "можливого подвійного списання", msg_prefix=url)
         filtered = self.client.get("/admin/properties/payment/?needs_review__exact=1")
         self.assertContains(filtered, self.payment.order_id)
 
     def test_no_warning_without_duplicates(self):
         self.send(111)
         self.client.force_login(make_admin())
-        self.assertNotContains(self.client.get("/admin/properties/payment/"), "ДРУГИМ успішним списанням")
+        self.assertNotContains(self.client.get("/admin/properties/payment/"), "можливого подвійного списання")
 
 
 @override_settings(**LIQ)
@@ -564,7 +577,7 @@ class DuplicateReversedTests(_CreditedPaymentBase):
         self.assertEqual(self.payment.status, PaymentStatus.REVERSED)
         self.assertIn("Кошти повернено", self.payment.error_message)
         self.assertEqual(self.state(), ("111", until))  # чинна політика: період не скасовується автоматично
-        self.assertFalse(self.payment.needs_review)
+        self.assertTrue(self.payment.needs_review)  # повернення зарахованого платежу — на перевірку адміна
         self.assertEqual(_refund_alert_ids(self.payment), [])
 
     def test_reversed_of_second_payment_id_keeps_first_payment_intact(self):
@@ -792,7 +805,8 @@ class AdminReviewActionTests(_CreditedPaymentBase):
 
 
 def _latest_alert_id_for(payment):
-    return PaymentEvent.objects.filter(payment=payment, note__startswith="[ALERT").order_by("id").last().id
+    from properties.admin import _latest_alert_id  # версія ALERT-подій (id + відбиток вмісту), як на сторінці
+    return _latest_alert_id(payment)
 
 
 @override_settings(**LIQ)

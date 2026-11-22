@@ -22,6 +22,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
@@ -47,6 +48,9 @@ class DuplicateChargeError(PlacementError):
 
 DUPLICATE_CHARGE_NOTE = "[ALERT duplicate_charge]"
 DUPLICATE_REFUND_NOTE = "[ALERT duplicate_refund]"
+DUPLICATE_PROPERTY_NOTE = "[ALERT duplicate_property_charge]"
+AMOUNT_MISMATCH_NOTE = "[ALERT amount_mismatch]"
+PAYMENT_REVERSED_NOTE = "[ALERT payment_reversed]"
 
 
 def _flag_duplicate(payment, new_id, note_prefix, text, provider_status, **payload):
@@ -71,6 +75,124 @@ def _flag_duplicate_charge(payment, new_id, paid_amount, paid_currency):
         "Не зараховано; перевірте і поверніть кошти.",
         "success", amount=str(paid_amount), currency=str(paid_currency)[:8],
     )
+
+
+def _cross_order_duplicates(payment):
+    """
+    Інші платежі того самого оголошення, з якими зарахування `payment` (зараз) утворює ймовірне
+    подвійне списання: старіший платіж отримав успіх уже ПІСЛЯ створення новішого. Звичайне
+    продовження (A зараховано -> потім створено й оплачено B) сюди не потрапляє.
+    Порядок платежів — (created_at, pk): однаковий created_at не ховає пару.
+    Граничний випадок: applied_at старішого ТОЧНО дорівнює created_at новішого. Обидва значення —
+    timezone.now() з точністю до мікросекунди (SQLite/PostgreSQL), а при нормальному продовженні
+    B створюється окремим запитом уже після commit зарахування A, тож рівність означає, що порядок
+    не встановлюється. Безпечна поведінка — позначити для перевірки (>=): хибна позначка коштує
+    адміністратору перегляду, пропуск — непомічене подвійне списання.
+    Викликається під select_for_update оголошення, тож паралельні зарахування бачать одне одного.
+    """
+    others = Payment.objects.filter(property_id=payment.property_id).exclude(pk=payment.pk)
+    newer = Q(created_at__gt=payment.created_at) | Q(created_at=payment.created_at, pk__gt=payment.pk)
+    older = Q(created_at__lt=payment.created_at) | Q(created_at=payment.created_at, pk__lt=payment.pk)
+    open_or_credited = (Q(status__in=OPEN_STATUSES, applied_at__isnull=True)
+                        | Q(status=PaymentStatus.SUCCESS, applied_at__isnull=False))
+    return list(others.filter(
+        # Новіший платіж уже існує (відкритий або зарахований), а цей, старіший, зараховується лише зараз.
+        (newer & open_or_credited)
+        # Старіший платіж зарахований уже після створення цього.
+        | (older & Q(status=PaymentStatus.SUCCESS, applied_at__gte=payment.created_at))
+    ).order_by("created_at", "pk"))
+
+
+def _property_duplicate_alert(this, that):
+    """payload і note ALERT для пари: ID записів Payment і ID транзакцій LiqPay — окремі поля."""
+    payload = {
+        "type": "duplicate_property_charge",
+        "property_id": this.property_id,
+        "payment_record_id": this.pk,
+        "order_id": this.order_id,
+        "liqpay_payment_id": this.provider_transaction_id or "",
+        "other_payment_record_id": that.pk,
+        "other_order_id": that.order_id,
+        "other_liqpay_payment_id": that.provider_transaction_id or "",
+    }
+    note = (f"{DUPLICATE_PROPERTY_NOTE} Оголошення {this.property_id}: {this.order_id} "
+            f"(LiqPay {payload['liqpay_payment_id'] or '—'}) і {that.order_id} "
+            f"(LiqPay {payload['other_liqpay_payment_id'] or '—'}). "
+            "Можливе подвійне списання; перевірте й поверніть зайве вручну.")[:255]
+    return payload, note
+
+
+def _flag_property_duplicates(payment, others):
+    """
+    needs_review на обох платежах. Рівно одна ALERT-подія на кожен платіж пари: якщо ID транзакції
+    другого платежу став відомим пізніше — наявна подія оновлюється (payload і note), а не дублюється.
+    Лише ідентифікатори — без карткових і персональних даних.
+    """
+    payment.needs_review = True  # збережеться разом із зарахуванням
+    Payment.objects.filter(pk__in=[o.pk for o in others]).update(needs_review=True, updated_at=timezone.now())
+    for other in others:
+        for this, that in ((payment, other), (other, payment)):
+            payload, note = _property_duplicate_alert(this, that)
+            existing = [e for e in PaymentEvent.objects.filter(payment_id=this.pk,
+                                                               note__startswith=DUPLICATE_PROPERTY_NOTE)
+                        if e.payload.get("other_payment_record_id") == that.pk]
+            if existing:
+                event = existing[0]
+                if (event.payload, event.note) != (payload, note):
+                    event.payload, event.note = payload, note
+                    event.save(update_fields=["payload", "note"])
+                continue
+            # Внутрішня подія застосунку, а не повідомлення LiqPay: signature_valid=False і без
+            # provider_status (інакше вона сприймалась би як останній перевірений статус провайдера,
+            # напр. у last_attempt_try_again). Розпізнається за префіксом note «[ALERT».
+            PaymentEvent.objects.create(payment_id=this.pk, order_id=this.order_id, signature_valid=False,
+                                        provider_status="", payload=payload, note=note)
+
+
+def _flag_amount_mismatch(payment, transaction_id, paid_amount, paid_currency):
+    """
+    Провайдер підтвердив оплату з іншою сумою/валютою: не зараховано, але кошти, можливо, списано —
+    потрібне рішення адміністратора (needs_review). Одна ALERT-подія на кожну комбінацію
+    payment_id + сума + валюта (повтори callback і sync не дублюють її). Внутрішня подія
+    застосунку: signature_valid=False і без provider_status (як [ALERT duplicate_property_charge]).
+    """
+    payload = {"type": "amount_mismatch", "order_id": payment.order_id,
+               "payment_id": str(transaction_id or "")[:64], "amount": str(paid_amount)[:32],
+               "currency": str(paid_currency or "")[:8], "expected_amount": str(payment.amount),
+               "expected_currency": payment.currency}
+    if any(e.payload == payload for e in PaymentEvent.objects.filter(payment_id=payment.pk,
+                                                                     note__startswith=AMOUNT_MISMATCH_NOTE)):
+        return
+    PaymentEvent.objects.create(
+        payment_id=payment.pk, order_id=payment.order_id, signature_valid=False, provider_status="",
+        payload=payload,
+        note=(f"{AMOUNT_MISMATCH_NOTE} Очікувалось {payment.amount} {payment.currency}, LiqPay підтвердив "
+              f"{payload['amount']} {payload['currency']}. Не зараховано; перевірте в кабінеті LiqPay і "
+              "поверніть кошти.")[:255],
+    )
+
+
+def _flag_reversed(payment, reversed_id):
+    """
+    Викликається під select_for_update платежу. Створює подію [ALERT payment_reversed], якщо її ще немає;
+    повертає True, лише якщо подію створено (тоді викликач ставить needs_review). Одна подія на платіж:
+    зарахований payment_id у платежу лише один. Внутрішня подія застосунку: signature_valid=False і без
+    provider_status (як інші ALERT, що не є повідомленнями LiqPay). Лише ідентифікатори й сума.
+    """
+    if PaymentEvent.objects.filter(payment_id=payment.pk, note__startswith=PAYMENT_REVERSED_NOTE).exists():
+        return False
+    payload = {"type": "payment_reversed", "property_id": payment.property_id, "payment_record_id": payment.pk,
+               "order_id": payment.order_id, "liqpay_payment_id": payment.provider_transaction_id or "",
+               "reversed_payment_id": reversed_id, "amount": str(payment.paid_amount),
+               "currency": payment.paid_currency}
+    PaymentEvent.objects.create(
+        payment_id=payment.pk, order_id=payment.order_id, signature_valid=False, provider_status="",
+        payload=payload,
+        note=(f"{PAYMENT_REVERSED_NOTE} LiqPay повернув {payload['amount']} {payload['currency']} за зарахованим "
+              f"платежем (LiqPay {payload['liqpay_payment_id'] or '—'}). Розміщення не змінено; вирішіть, "
+              "чи залишати оплачений період.")[:255],
+    )
+    return True
 
 
 def can_pay_for(user, prop):
@@ -215,6 +337,10 @@ def apply_successful_payment(payment_id, *, paid_amount, paid_currency, transact
     """
     new_id = str(transaction_id)[:64] if transaction_id else ""
     with transaction.atomic():
+        # Спершу оголошення, потім платіж — той самий порядок, що в activate_on_publication. Зарахування
+        # різних order_id одного оголошення серіалізуються й бачать одне одного (_cross_order_duplicates).
+        property_id = Payment.objects.values_list("property_id", flat=True).get(pk=payment_id)
+        list(Property.objects.select_for_update().filter(pk=property_id).values_list("pk", flat=True))
         payment = Payment.objects.select_for_update().get(pk=payment_id)
         if payment.applied_at is None and payment.status != PaymentStatus.REVERSED:
             return _credit_locked(payment, paid_amount, paid_currency, transaction_id, paid_at)
@@ -234,8 +360,10 @@ def _credit_locked(payment, paid_amount, paid_currency, transaction_id, paid_at)
                 f"Невідповідність суми/валюти: очікувалось {payment.amount} {payment.currency}, "
                 f"отримано {paid_amount} {paid_currency}. Потрібна ручна перевірка."
             )[:255],
+            needs_review=True,
             updated_at=timezone.now(),
         )
+        _flag_amount_mismatch(payment, transaction_id, paid_amount, paid_currency)
         payment.refresh_from_db()
         return payment, False
 
@@ -256,6 +384,7 @@ def _credit_locked(payment, paid_amount, paid_currency, transaction_id, paid_at)
         payment.provider_transaction_id = str(transaction_id)[:64]
 
     prop_fields = _apply_period_rules(payment, prop, now)
+    duplicates = _cross_order_duplicates(payment)
     try:
         with transaction.atomic():
             payment.save()
@@ -263,12 +392,18 @@ def _credit_locked(payment, paid_amount, paid_currency, transaction_id, paid_at)
         raise PlacementError("Ця транзакція провайдера вже прив'язана до іншого платежу.")
     if prop_fields:
         prop.save(update_fields=prop_fields + ["updated_at"])
+    if duplicates:
+        _flag_property_duplicates(payment, duplicates)
+        payment.save(update_fields=["needs_review", "updated_at"])
     return payment, True
 
 
 def mark_reversed(payment_id, message="", transaction_id=None):
     """
     Повернення коштів провайдером. Період не скасовується автоматично — потрібне рішення адміна.
+    Повернення ЗАРАХОВАНОГО платежу: needs_review і рівно одна подія [ALERT payment_reversed]
+    (повтори callback і Status API її не дублюють і не відкривають уже закриту перевірку знову).
+    Дані зарахування (payment_id, сума, дати, період) і оголошення (публікація, модерація) не змінюються.
     Повернення ІНШОГО payment_id, ніж зарахований (друге списання за тим самим order_id), не
     чіпає зарахований платіж: needs_review, подія [ALERT duplicate_refund], DuplicateChargeError.
     """
@@ -279,7 +414,11 @@ def mark_reversed(payment_id, message="", transaction_id=None):
         if not (new_id and credited_id and new_id != credited_id):
             payment.status = PaymentStatus.REVERSED
             payment.error_message = (message or "Кошти повернено. Перевірте розміщення вручну.")[:255]
-            payment.save(update_fields=["status", "error_message", "updated_at"])
+            fields = ["status", "error_message", "updated_at"]
+            if payment.applied_at is not None and _flag_reversed(payment, new_id):
+                payment.needs_review = True
+                fields.append("needs_review")
+            payment.save(update_fields=fields)
             return payment
         _flag_duplicate(
             payment, new_id, DUPLICATE_REFUND_NOTE,

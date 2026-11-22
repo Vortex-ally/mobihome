@@ -453,7 +453,7 @@
                 <tbody>
                 {% for pay in user_payments %}
                     <tr>
-                        <td class="text-nowrap">{{ pay.created_at|date:"d.m.Y H:i" }}</td>
+                        <td class="text-nowrap">{{ pay.created_at|date:"d.m.Y H:i" }}<div class="small text-muted" title="Номер замовлення">{{ pay.order_id }}</div></td>
                         <td><a href="{% url 'properties:property_detail' pay.property_id %}">{{ pay.property.name|truncatechars:40 }}</a></td>
                         <td class="text-nowrap">{{ pay.amount|floatformat:"2g" }} {{ pay.currency }}</td>
                         <td>

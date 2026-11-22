@@ -60,6 +60,9 @@
                 {% csrf_token %}
                 <button type="submit" class="btn btn-success btn-lg px-4 py-2">{% if property.placement_active %}Продовжити за{% else %}Оплатити{% endif %} {{ tariff.price|floatformat:"0" }} грн</button>
             </form>
+            {% if awaiting_activation and not property.placement_active %}
+            <p class="small text-muted mt-2 mb-0">Попередню оплату вже отримано. Нова оплата додасть ще {{ tariff.duration_days }} днів після вже оплачених.</p>
+            {% endif %}
             <p class="small text-muted mt-2 mb-0">Оплата карткою на захищеній сторінці LiqPay. Дані картки наш сайт не отримує.</p>
             {% else %}
             <p class="small text-muted mb-0">Онлайн-оплата карткою буде доступна найближчим часом.</p>

@@ -49,7 +49,19 @@ def start_payment(request, pk):
 
     existing = open_payment_for(prop)
     if existing is not None:
-        existing = liqpay.expire_stale(existing)  # протермінована -> «не завершено»
+        if liqpay.is_stale(existing):
+            # Перш ніж закрити прострочену оплату й дозволити нову, уточнюємо її стан у LiqPay:
+            # оплачений, але не підтверджений callback платіж не можна «прострочити» (подвійне списання).
+            status = liqpay.fetch_status(existing, config)
+            existing.refresh_from_db()
+            existing = liqpay.expire_if_confirmed(existing, status)
+            if existing.status == PaymentStatus.SUCCESS:
+                messages.success(request, "Попередню оплату підтверджено LiqPay. Нову оплату не створено.")
+                return redirect("properties:payment_result", order_id=existing.order_id)
+            if not existing.is_final():
+                messages.error(request, "Не вдалося підтвердити стан попередньої оплати в LiqPay. Щоб уникнути "
+                                        "подвійного списання, нову оплату не створено. Спробуйте пізніше.")
+                return redirect("properties:payment", pk=pk)
         if existing.is_test != config.sandbox and not existing.is_final():
             # Режим LiqPay змінився (тест <-> бойовий): стару незавершену оплату закриваємо.
             existing = mark_unsuccessful(existing.pk, PaymentStatus.CANCELLED, "Змінено режим LiqPay.")
@@ -158,10 +170,17 @@ def payment_result(request, order_id):
         if cache.add(key, 1, STATUS_CHECK_INTERVAL_SECONDS):
             liqpay.fetch_status(payment)
             payment.refresh_from_db()
+    try_again = liqpay.last_attempt_try_again(payment)
+    # LiqPay підтвердив іншу суму/валюту (не зараховано) — чекати автоматично нічого: рішення адміністратора.
+    amount_mismatch = payment.status == PaymentStatus.PENDING and bool(payment.error_message)
     return render(request, "properties/payment_result.html", {
         "payment": payment,
         "property": payment.property,
-        "is_pending": not payment.is_final(),
+        "is_pending": not payment.is_final() and not try_again and not amount_mismatch,
+        "amount_mismatch": amount_mismatch,
+        "try_again": try_again,
+        "can_retry": try_again and liqpay.payments_active() and timezone.now()
+        < payment.created_at + timedelta(minutes=settings.LIQPAY_PAYMENT_TTL_MINUTES),
         "PaymentStatus": PaymentStatus,
     })
 
@@ -171,7 +190,9 @@ def payment_result(request, order_id):
 def cancel_payment(request, order_id):
     """Користувач відмовився від незавершеної оплати. Пізній успішний callback усе одно буде зараховано."""
     payment = _own_payment_or_404(request, order_id)
-    if not payment.is_final():
+    # Платіж із підтвердженою LiqPay, але невідповідною сумою (error_message) не скасовується користувачем:
+    # кошти, можливо, списано, рішення — за адміністратором.
+    if not payment.is_final() and not payment.error_message:
         mark_unsuccessful(payment.pk, PaymentStatus.CANCELLED, "Скасовано користувачем.")
         messages.info(request, "Оплату скасовано.")
     return redirect("properties:payment", pk=payment.property_id)

@@ -15,10 +15,20 @@
                 <strong>Оплату підтверджено LiqPay.</strong>
                 {% if payment.period_start %}
                     Розміщення діє з {{ payment.period_start|date:"d.m.Y H:i" }} до {{ payment.period_end|date:"d.m.Y H:i" }}.
+                {% elif property.archived_at %}
+                    Оголошення в архіві, тому розміщення не почалося. Зверніться до підтримки щодо цієї оплати.
+                {% elif property.moderation_status == 'rejected' %}
+                    Оплату збережено, але оголошення відхилено модератором{% if property.moderation_note %}: «{{ property.moderation_note }}»{% endif %}.
+                    Виправте оголошення і надішліть його на модерацію повторно — {{ payment.duration_days }} днів розміщення почнуться з моменту публікації.
+                {% elif not property.is_published %}
+                    Оголошення ще не надіслано на модерацію. Надішліть його на сторінці публікації — {{ payment.duration_days }} днів розміщення почнуться з моменту публікації після схвалення.
                 {% else %}
-                    30 днів розміщення почнуться з моменту публікації після модерації.
+                    Оголошення на модерації. {{ payment.duration_days }} днів розміщення почнуться з моменту публікації після схвалення.
                 {% endif %}
             </div>
+            {% if payment.needs_review %}
+            <div class="alert alert-info mt-3 mb-0">Платіж перевіряє адміністратор (можливе повторне списання). Якщо кошти списано двічі, зайве списання буде повернено.</div>
+            {% endif %}
         {% elif payment.status == 'failure' %}
             <div class="alert alert-danger mb-0"><strong>Оплату відхилено.</strong> Кошти не списано. Спробуйте ще раз або іншою карткою.</div>
         {% elif payment.status == 'cancelled' %}
@@ -26,19 +36,35 @@
         {% elif payment.status == 'expired' %}
             <div class="alert alert-secondary mb-0">Оплату не було завершено вчасно.</div>
         {% elif payment.status == 'reversed' %}
-            <div class="alert alert-info mb-0">Кошти за цим платежем повернено.</div>
+            <div class="alert alert-info mb-0">Кошти за цим платежем повернено. Розміщення перевіряє адміністратор.</div>
+        {% elif amount_mismatch %}
+            <div class="alert alert-danger mb-0">
+                <strong>Оплата потребує ручної перевірки.</strong>
+                LiqPay підтвердив платіж, але його сума або валюта не збігаються з рахунком, тому розміщення не зараховано.
+                Адміністратор перевірить платіж і зв'яжеться з вами; за потреби кошти буде повернено.
+            </div>
+        {% elif try_again %}
+            <div class="alert alert-danger mb-0">
+                <strong>Платіж не пройшов. Ви можете спробувати оплатити ще раз.</strong>
+                {% if can_retry %}
+                <form method="post" action="{% url 'properties:start_payment' property.pk %}" class="mt-3">{% csrf_token %}
+                    <button type="submit" class="btn btn-success px-4 py-2">Спробувати ще раз</button>
+                </form>
+                {% else %}
+                <div class="small mt-2">Термін цієї форми оплати минув. Нову оплату можна буде створити на сторінці оплати оголошення.</div>
+                {% endif %}
+            </div>
         {% else %}
             <div class="alert alert-warning mb-0">
                 <strong>Очікуємо підтвердження від LiqPay.</strong>
                 Повернення на цю сторінку ще не означає, що оплату завершено. Сторінка оновиться автоматично.
-                {% if payment.error_message %}<div class="small mt-2">{{ payment.error_message }}</div>{% endif %}
             </div>
         {% endif %}
     </div>
     <div class="d-flex flex-wrap gap-2 mt-4">
         <a href="{% url 'properties:payment' property.pk %}" class="btn btn-outline-secondary">До оплати оголошення</a>
         <a href="{% url 'properties:profile' %}" class="btn btn-outline-secondary">Мої платежі</a>
-        {% if is_pending %}
+        {% if is_pending or try_again %}
         <form method="post" action="{% url 'properties:cancel_payment' payment.order_id %}">{% csrf_token %}
             <button type="submit" class="btn btn-link text-danger">Скасувати оплату</button>
         </form>
