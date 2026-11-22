@@ -610,3 +610,57 @@ class ConcurrentReversedTests(TransactionTestCase):
         self.assertEqual(snapshot(payment, FINANCE_FIELDS), finance)
         self.assertEqual(snapshot(prop, LISTING_FIELDS), listing)
         self.assertTrue(Property.objects.filter(pk=prop.pk, placement_until=listing["placement_until"]).exists())
+
+
+@override_settings(**LIQ)
+class NeedsReviewDisplayTests(_Base):
+    """needs_review видно власнику в історії та на сторінці результату; не маскується під звичайний стан."""
+
+    BADGE = "на перевірці"
+
+    def setUp(self):
+        super().setUp()
+        self.prop = make_property(owner=self.owner, placement_until=timezone.now() + timedelta(days=5))
+        self.payment = create_payment(self.owner, self.prop, is_test=True)
+        self.client.force_login(self.owner)
+
+    def pages(self):
+        with mock.patch.object(liqpay, "_post_api", side_effect=urllib.error.URLError("down")):
+            return (self.client.get(f"/payments/{self.payment.order_id}/result/"), self.client.get("/profile/"),
+                    self.client.get(f"/payment/{self.prop.pk}/"))
+
+    def test_no_badge_for_normal_success(self):
+        self.send(self.payment, payment_id=111)
+        result, profile, payment_page = self.pages()
+        self.assertContains(result, "Оплату підтверджено")
+        self.assertNotContains(result, "Платіж перевіряє адміністратор")
+        self.assertNotContains(profile, self.BADGE)
+        self.assertNotContains(payment_page, self.BADGE)
+
+    def test_duplicate_charge_success_shows_review_notice(self):
+        self.send(self.payment, payment_id=111)
+        self.send(self.payment, payment_id=222)  # друге списання за тим самим order_id
+        self.assertTrue(self.payment.needs_review)
+        result, profile, payment_page = self.pages()
+        self.assertContains(result, "Оплату підтверджено")
+        self.assertContains(result, "Платіж перевіряє адміністратор")
+        self.assertNotContains(result, "повторне списання")  # причина не вгадується користувачу
+        self.assertContains(profile, self.BADGE)
+        self.assertContains(payment_page, self.BADGE)
+
+    def test_amount_mismatch_shows_badge_not_success(self):
+        self.send(self.payment, amount=1.0)
+        result, profile, payment_page = self.pages()
+        self.assertNotContains(result, "Оплату підтверджено")
+        self.assertContains(result, "Оплата потребує ручної перевірки")
+        self.assertContains(profile, self.BADGE)
+        self.assertContains(payment_page, self.BADGE)
+
+    def test_reversed_shows_badge_and_refund_text(self):
+        self.send(self.payment, payment_id=111)
+        self.send(self.payment, payment_id=111, status="reversed")
+        result, profile, _ = self.pages()
+        self.assertContains(result, "Кошти за цим платежем повернено")
+        self.assertNotContains(result, "Оплату підтверджено")
+        self.assertContains(profile, self.BADGE)
+        self.assertContains(profile, self.payment.get_status_display())

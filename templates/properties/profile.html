@@ -459,6 +459,7 @@
                         <td>
                             <a href="{% url 'properties:payment_result' pay.order_id %}" class="badge profile-badge payment-status payment-status--{{ pay.status }}">{{ pay.get_status_display }}</a>
                             {% if pay.is_test %}<span class="badge text-bg-secondary ms-1" title="Тестовий режим LiqPay">тест</span>{% endif %}
+                            {% if pay.needs_review %}<span class="badge text-bg-warning ms-1" title="Платіж перевіряє адміністратор">на перевірці</span>{% endif %}
                         </td>
                         <td class="text-nowrap small">
                             {% if pay.period_start %}{{ pay.period_start|date:"d.m.Y" }} – {{ pay.period_end|date:"d.m.Y" }}

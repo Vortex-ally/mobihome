@@ -85,7 +85,7 @@
     <tr>
         <td class="text-nowrap">{{ pay.created_at|date:"d.m.Y H:i" }}</td>
         <td class="text-nowrap">{{ pay.amount|floatformat:"2g" }} {{ pay.currency }}</td>
-        <td><a href="{% url 'properties:payment_result' pay.order_id %}">{{ pay.get_status_display }}</a>{% if pay.is_test %} <span class="badge text-bg-secondary">тест</span>{% endif %}</td>
+        <td><a href="{% url 'properties:payment_result' pay.order_id %}">{{ pay.get_status_display }}</a>{% if pay.is_test %} <span class="badge text-bg-secondary">тест</span>{% endif %}{% if pay.needs_review %} <span class="badge text-bg-warning" title="Платіж перевіряє адміністратор">на перевірці</span>{% endif %}</td>
         <td class="small text-nowrap">{% if pay.period_start %}{{ pay.period_start|date:"d.m.Y" }} – {{ pay.period_end|date:"d.m.Y" }}{% elif pay.status == 'success' %}після публікації{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}

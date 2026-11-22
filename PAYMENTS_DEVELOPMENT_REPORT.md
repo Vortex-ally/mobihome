@@ -64,8 +64,9 @@
 | Скасування, пізній успіх після EXPIRED | незакомічено | 228 → 229 |
 | Різні `order_id`: дослідження → захист | незакомічено | 234 → 242 |
 | Точкові виправлення Status API та ALERT | незакомічено | 250 → 257 → 260 → 263 |
-| Повний аудит і доопрацювання циклу оплати (22.11) | незакомічено | 263 → 298 |
-| `needs_review` для повернення зарахованого платежу (22.11) | незакомічено | 298 → 306 |
+| Повний аудит і доопрацювання циклу оплати (22.11) | `72d5990` | 263 → 298 |
+| `needs_review` для повернення зарахованого платежу (22.11) | `72d5990` | 298 → 306 |
+| Позначка `needs_review` в історії платежів (22.11, E2E-перевірка) | `fix(payments): clarify manual review status…` | 306 → 310 |
 
 ### 2.0 Початковий стан (15.11.2026) — [Git `28f2bcd`], [PROJECT_AUDIT.md](PROJECT_AUDIT.md)
 
@@ -478,7 +479,8 @@ sequenceDiagram
 | 4 | **Успішна оплата після повторної спроби** | Той самий платіж #2 (той самий `order_id`) → `success` через callback 18:17:28 | [БД] |
 | 5 | **Відновлення через Status API** | Платіж #3 (`mh-3-41b…8905`): створено 19.11 20:16, оплачено 20:21, зараховано **через Status API** (`[status] Оплату зараховано.`, 20:23). Подій callback для цього платежу **немає**: callback не надійшов або не дійшов (причина невідома — можливо, змінилась адреса тунелю) | [БД] |
 | 6 | **Успішна оплата не публікує оголошення** | Усі три оголошення з оплатами: `is_published=0`, `moderation_status=pending`, `placement_until` порожній, `activated_at` порожній | [БД] |
-| 7 | **`payment_not_found` через неіснуючий `order_id`** | **Не підтверджено.** У БД немає подій «не знайдено»; результат такої перевірки не зафіксовано | — |
+| 7 | **`payment_not_found` через неіснуючий `order_id`** | **Підтверджено 22.11.2026** прямим запитом до Sandbox Status API (без обробки відповіді й без запису в БД): `result=error`, `status=error`, `err_code="payment_not_found"` (рядок, точний збіг), полів `order_id`/`public_key` у відповіді немає — саме цей випадок `fetch_status` трактує як `not_found` | [Сесія 22.11] |
+| 7а | **Формат відповіді Status API для оплаченого платежу** | **Підтверджено 22.11.2026** для платежу #3: JSON без `data`/`signature`, `result=ok`, `status=success`, `amount=99.0` (число), `currency=UAH`, `order_id` і `public_key` збігаються з нашими, `payment_id` присутній | [Сесія 22.11] |
 | 8 | **Період починається після схвалення** | **Не перевірено вручну.** Жодне з оплачених оголошень ще не схвалене (усі `pending`). Підтверджено лише автотестами | [Тест] |
 
 Додатково:
@@ -501,10 +503,11 @@ sequenceDiagram
 | [test_liqpay.py](properties/tests/test_liqpay.py) | 102 | OK |
 | [test_liqpay_hardening.py](properties/tests/test_liqpay_hardening.py) | 56 | OK, 3 пропущено (`A3FailFastTests` через наявний `.env`) |
 | [test_placement_admin.py](properties/tests/test_placement_admin.py) | 41 | OK |
-| [test_payment_lifecycle.py](properties/tests/test_payment_lifecycle.py) | 43 | OK |
-| **Разом платіжні модулі** | **242** | **OK (3 пропущено)** |
-| **Увесь проєкт, SQLite** (`unshare -rn venv/bin/python manage.py test --settings=config.test_settings`) | **306** | **OK (4 пропущено)** |
-| **Увесь проєкт, тимчасовий PostgreSQL 18** | **306** | **OK (4 пропущено)** |
+| [test_payment_lifecycle.py](properties/tests/test_payment_lifecycle.py) | 47 | OK |
+| **Разом платіжні модулі** | **246** | **OK (3 пропущено)** |
+| **Увесь проєкт, SQLite** (`unshare -rn venv/bin/python manage.py test --settings=config.test_settings`) | **310** | **OK (4 пропущено)** |
+| **Увесь проєкт, тимчасовий PostgreSQL 18** | **310** | **OK (4 пропущено)** |
+| Увесь проєкт у копії робочого дерева **без `.env`** (SQLite і PostgreSQL) | 310 | OK, 0 пропущено |
 | Тести конкурентності (`-k parallel -k Parallel -k Concurrent -k concurrent`), 3 прогони на кожній БД | 7 | OK щоразу |
 
 - **Пропущені 4 тести** — через наявний `.env` (`A3FailFastTests` ×3, `test_production_refuses_to_start_without_secret_key`), а не через PostgreSQL.
@@ -601,6 +604,7 @@ sequenceDiagram
 - `ResultPageStateTests`: `test_paid_draft_asks_to_submit_for_moderation`, `test_paid_listing_on_moderation`, `test_paid_rejected_listing_explains_resubmission`, `test_paid_approved_listing_shows_period`, `test_forged_success_redirect_does_not_change_status`, `test_other_user_cannot_see_payment`, `test_anonymous_redirected_to_login`, `test_profile_history_shows_order_reference_and_status`
 - `PlacementScenarioTests`: `test_paid_rejected_listing_activates_only_after_approval`, `test_rejecting_paid_live_listing_hides_it_and_reapproval_does_not_extend`, `test_duplicate_and_delayed_callbacks_never_extend_twice`, `test_extension_of_active_placement_adds_to_end_date`, `test_expired_placement_returns_to_moderation_and_restarts_on_publication`, `test_two_payments_before_publication_run_sequentially`, `test_pending_failed_and_cancelled_payments_do_not_touch_listing`, `test_payment_never_publishes_unsubmitted_listing`
 - `SyncPendingRecoveryTests`: `test_recovers_lost_callback_for_recently_cancelled_payment`, `test_cancelled_payment_unchanged_by_not_found_or_processing`, `test_old_closed_and_credited_payments_not_polled`, `test_aborts_after_consecutive_failures_without_changing_payments`, `test_api_failures_stop_after_limit_calls`, `test_delay_between_requests`, `test_success_payment_with_timeout_is_retried_next_run`, `test_output_contains_no_secrets`
+- `NeedsReviewDisplayTests`: `test_no_badge_for_normal_success`, `test_duplicate_charge_success_shows_review_notice`, `test_amount_mismatch_shows_badge_not_success`, `test_reversed_shows_badge_and_refund_text`
 - `ReversedPaymentReviewTests`: `test_first_reversed_notification`, `test_duplicate_reversed_notifications`, `test_duplicate_after_closed_review_does_not_reopen`, `test_reversed_received_through_status_api`, `test_reversed_of_paid_listing_on_moderation_keeps_moderation`, `test_reversed_payment_that_was_never_credited`, `test_admin_sees_reversed_alert_and_warning`
 
 **Конкурентна обробка** (`TransactionTestCase`, справжні потоки)
@@ -724,7 +728,7 @@ for e in PaymentEvent.objects.filter(order_id='<order_id>').order_by('created_at
 |---|---|---|---|
 | Hosted Checkout | **Реалізовано та перевірено** | `CheckoutTests`; 3 реальні Sandbox-оплати | Перевірка з бойовими ключами |
 | Callback | **Реалізовано та перевірено** | `CallbackTests`, `A2CallbackAbuseTests`; Sandbox #1, #2 через callback | Callback на бойовий домен |
-| Status API | **Реалізовано та перевірено** | `ResultUrlAndStatusTests`, `A1…`, тести `err_code`; Sandbox #2 (`try_again`), #3 (відновлення без callback) | Звірити реальний `err_code` для неіснуючого замовлення (`payment_not_found` не перевірено в Sandbox) |
+| Status API | **Реалізовано та перевірено** | `ResultUrlAndStatusTests`, `A1…`, тести `err_code`; Sandbox #2 (`try_again`), #3 (відновлення без callback); 22.11 — реальний `payment_not_found` і формат відповіді (розділ 6, рядки 7–7а) | — |
 | Повторні платежі | **Реалізовано та перевірено** | `TryAgainTests`, `A5A6…`; Sandbox #2: `try_again` → успіх з тим самим `order_id` | Сценарій «дві вкладки» вручну |
 | Захист від подвійного зарахування | **Реалізовано та перевірено** (автотести, зокрема PostgreSQL) | `Parallel*`, `DuplicateChargeTests`, `CrossOrderBoundaryTests` | Вручну не перевірено (і не повинно відтворюватись на реальних коштах) |
 | Модерація | **Реалізовано та перевірено** | `PlacementBusinessFlowTests`, `PlacementScenarioTests`, `ResultPageStateTests`; Sandbox: усі 3 оплачені оголошення лишились `pending` | Ручна перевірка відхилення й повторного схвалення оплаченого оголошення |
@@ -743,9 +747,7 @@ for e in PaymentEvent.objects.filter(order_id='<order_id>').order_by('created_at
 **Код і репозиторій**
 
 1. **Закомітити зміни.** 14 платіжних файлів (код, шаблони, тести, документація) підготовлено до коміту в `stage/liqpay`; до коміту вони є лише в робочій копії.
-2. **Звірити з реальним LiqPay Sandbox:**
-   - `err_code` для неіснуючого замовлення;
-   - чи надсилає LiqPay callback для `try_again` (у Sandbox його не було).
+2. **Звірити з реальним LiqPay Sandbox:** чи надсилає LiqPay callback для `try_again` (у Sandbox його не було). `err_code` для неіснуючого замовлення підтверджено 22.11 (`payment_not_found`).
 
 **Конфігурація Production**
 
@@ -780,7 +782,6 @@ for e in PaymentEvent.objects.filter(order_id='<order_id>').order_by('created_at
   - точний збіг timestamp.
 - **Залежність від годинника сервера** (`created_at` / `applied_at`).
 - **`signature_valid=True` у `[ALERT duplicate_charge]` / `[ALERT duplicate_refund]`.** Задокументовано, не змінено. Новіші `[ALERT amount_mismatch]`, `[ALERT payment_reversed]`, `[ALERT duplicate_property_charge]` — `signature_valid=False`.
-- **Текст на сторінці успішної оплати з `needs_review`** говорить про «можливе повторне списання», навіть якщо позначка з'явилась через попередню невідповідність суми. Неточність формулювання, не безпеки.
 - **Синхронізація не опитує вже зараховані платежі**, тож повернення коштів без callback буде виявлено лише запитом статусу конкретного платежу або при наступному callback.
 - **Оновлення `[ALERT duplicate_property_charge]` на місці.** Попередній вміст не зберігається, але ID транзакцій лишаються в подіях `[callback]` / `[status]`.
 - **Окрема Sandbox-БД не використовувалась.** Sandbox-записи лежать в основній локальній БД. Перед перенесенням даних на production їх треба відфільтрувати за `is_test=True`.

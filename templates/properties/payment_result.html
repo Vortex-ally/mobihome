@@ -27,7 +27,7 @@
                 {% endif %}
             </div>
             {% if payment.needs_review %}
-            <div class="alert alert-info mt-3 mb-0">Платіж перевіряє адміністратор (можливе повторне списання). Якщо кошти списано двічі, зайве списання буде повернено.</div>
+            <div class="alert alert-warning mt-3 mb-0">Платіж перевіряє адміністратор. Якщо з вас списано зайві кошти, їх буде повернено.</div>
             {% endif %}
         {% elif payment.status == 'failure' %}
             <div class="alert alert-danger mb-0"><strong>Оплату відхилено.</strong> Кошти не списано. Спробуйте ще раз або іншою карткою.</div>
