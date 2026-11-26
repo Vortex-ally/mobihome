@@ -182,9 +182,25 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
-if env_bool("DJANGO_BEHIND_PROXY", False):
+BEHIND_PROXY = env_bool("DJANGO_BEHIND_PROXY", False)
+if BEHIND_PROXY:
     # Лише якщо сайт стоїть за reverse-proxy (nginx), який виставляє цей заголовок.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Адреса клієнта для лімітів: X-Real-IP (nginx: proxy_set_header X-Real-IP $remote_addr) приймається лише
+# при BEHIND_PROXY і лише від цих адрес proxy; порожній REMOTE_ADDR — unix-сокет Gunicorn (доступ лише nginx).
+TRUSTED_PROXY_IPS = env_list("DJANGO_TRUSTED_PROXY_IPS", "127.0.0.1,::1")
+
+# Кеш лічильників (ліміти входу/форм/callback). Production (за proxy, кілька воркерів Gunicorn) — лише спільний
+# Redis; локально без Redis — пам'ять процесу (LocMemCache, типовий кеш Django).
+REDIS_URL = os.environ.get("DJANGO_REDIS_URL", "").strip()
+if REDIS_URL:
+    CACHES = {"default": {
+        "BACKEND": "properties.cache.ResilientRedisCache", "LOCATION": REDIS_URL, "KEY_PREFIX": "mobihome",
+        "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
+    }}
+# Без DJANGO_REDIS_URL за proxy — помилка properties.E010 у `check --deploy` (служба mobihome не стартує,
+# див. ExecStartPre у deploy/mobihome.service). Свідомий виняток для одного процесу — DJANGO_ALLOW_LOCAL_CACHE=True.
+ALLOW_LOCAL_CACHE = env_bool("DJANGO_ALLOW_LOCAL_CACHE", False)
 
 # Обмеження розміру завантажень (10 МБ на запит у пам'яті)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024

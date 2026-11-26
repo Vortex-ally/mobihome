@@ -2,8 +2,8 @@
 # Шляхи й користувача замініть під свій сервер (див. DEPLOYMENT.md).
 [Unit]
 Description=MobiHome (Django + Gunicorn)
-After=network.target postgresql.service
-Wants=postgresql.service
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
 
 [Service]
 Type=notify
@@ -12,9 +12,13 @@ Group=www-data
 WorkingDirectory=/srv/mobihome
 EnvironmentFile=/srv/mobihome/.env
 RuntimeDirectory=mobihome
+# Сокет доступний лише mobihome і nginx (група www-data) — Gunicorn недоступний напряму з мережі й іншим користувачам.
+RuntimeDirectoryMode=0750
+# Не стартувати з небезпечною конфігурацією (зокрема без спільного кешу Redis — properties.E010).
+ExecStartPre=/srv/mobihome/venv/bin/python manage.py check --deploy --fail-level ERROR
 ExecStart=/srv/mobihome/venv/bin/gunicorn config.wsgi:application \
     --bind unix:/run/mobihome/gunicorn.sock \
-    --workers 3 --timeout 60 --no-control-socket \
+    --workers 3 --timeout 120 --no-control-socket \
     --access-logfile - --error-logfile -
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure

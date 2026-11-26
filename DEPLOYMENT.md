@@ -1,6 +1,6 @@
 # Розгортання MobiHome на Ubuntu Server
 
-Схема: **nginx (HTTPS) → Gunicorn (systemd, unix-сокет) → Django → PostgreSQL**; Telegram-бот і звірка LiqPay —
+Схема: **nginx (HTTPS) → Gunicorn (systemd, unix-сокет) → Django → PostgreSQL + Redis (ліміти)**; Telegram-бот і звірка LiqPay —
 окремі systemd-служби. Шаблони — у [`deploy/`](deploy/). Нижче: проєкт у `/srv/mobihome`, системний користувач
 `mobihome`, домен `mobihome.example` — замініть на свої. Підходить Ubuntu 22.04 / 24.04 LTS (Python 3.10 / 3.12).
 
@@ -9,15 +9,15 @@
 > вперед/назад на копії основної бази, перенесення копії основної SQLite у PostgreSQL 18 (кількості збігаються),
 > `systemd-analyze verify` юнітів. Кроки з позначкою **[сервер]** можна перевірити лише на сервері.
 
-> ⚠️ **Перед відкриттям сайту для людей** — див. [§19](#19-відомі-обмеження-перед-запуском): ліміти спроб входу й форм
-> за nginx рахують усіх відвідувачів разом (потрібне невелике виправлення коду).
+> Ліміти спроб входу й форм рахуються **окремо для кожного відвідувача** (X-Real-IP від nginx) у **спільному Redis**
+> для всіх воркерів Gunicorn — перевірено 26.11 через nginx + Gunicorn + Redis (§19).
 
 ## 1. Системні залежності [сервер]
 
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y python3 python3-venv python3-dev build-essential git nginx postgresql \
-    certbot sqlite3 rsync ufw
+    redis-server certbot sqlite3 rsync ufw
 sudo timedatectl set-timezone Europe/Kyiv
 sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
 ```
@@ -65,6 +65,23 @@ sudo -u mobihome sh -c 'echo "127.0.0.1:5432:mobihome:mobihome:<надійний
 
 PostgreSQL слухає лише `localhost` (типово в Ubuntu) — порт 5432 назовні не відкривайте.
 
+### 5а. Redis — спільний кеш лімітів [сервер]
+
+```bash
+sudo systemctl enable --now redis-server
+grep -E '^(bind|protected-mode|port)' /etc/redis/redis.conf   # bind 127.0.0.1 -::1 · protected-mode yes · port 6379
+sudo ss -ltnp | grep 6379                                       # лише 127.0.0.1 / [::1], НЕ 0.0.0.0
+redis-cli ping                                                   # PONG
+```
+
+- Redis **не відкривати** в ufw/хмарному firewall; доступ лише з цього сервера.
+- Пароль (рекомендовано): `requirepass <пароль>` у `/etc/redis/redis.conf`, `sudo systemctl restart redis-server`,
+  у `.env`: `DJANGO_REDIS_URL=redis://:<пароль>@127.0.0.1:6379/1` (URL — секрет, лише в `.env`).
+- Дані Redis тут — лише тимчасові лічильники; резервне копіювання не потрібне.
+- Redis недоступний → сайт працює (вхід і форми відповідають за ~1 с), ліміти тимчасово не діють, у журналі
+  `Кеш Redis недоступний` (`journalctl -u mobihome | grep Redis`). Без `DJANGO_REDIS_URL` служба `mobihome`
+  не стартує (`properties.E010` у `check --deploy`) — тихого переходу на локальний кеш немає.
+
 ## 6. Production `.env` [сервер]
 
 ```bash
@@ -80,7 +97,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(64))"   # значенн
 | `DJANGO_SECRET_KEY` | новий випадковий ключ (не з локального `.env`) |
 | `DJANGO_ALLOWED_HOSTS` | `mobihome.example,www.mobihome.example` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://mobihome.example,https://www.mobihome.example` |
-| `DJANGO_BEHIND_PROXY` | `True` (за nginx) |
+| `DJANGO_BEHIND_PROXY` | `True` (за nginx) — адреса клієнта з `X-Real-IP` від nginx |
+| `DJANGO_REDIS_URL` | `redis://127.0.0.1:6379/1` (з паролем — `redis://:<пароль>@127.0.0.1:6379/1`) — **обов'язково** |
+| `DJANGO_TRUSTED_PROXY_IPS` | не задавати (типово `127.0.0.1,::1`; unix-сокет довірений завжди) |
 | `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_COOKIES` | не задавати або `True` (при `DEBUG=False` це типово) |
 | `DJANGO_SECURE_HSTS_SECONDS` | `0` спершу; `31536000` після перевірки HTTPS (§13) |
 | `DJANGO_SERVE_MEDIA` | `False` — `/media/` віддає nginx |
@@ -176,7 +195,10 @@ systemctl status mobihome --no-pager
 sudo -u www-data curl -s --unix-socket /run/mobihome/gunicorn.sock -H 'Host: mobihome.example' -H 'X-Forwarded-Proto: https' http://localhost/healthz/
 ```
 
-3 воркери, timeout 60 с, сокет `/run/mobihome/gunicorn.sock`, логи — у journald. Перезапуск без простою: `sudo systemctl reload mobihome`.
+3 воркери, timeout 120 с, логи — у journald. Gunicorn слухає **лише unix-сокет** `/run/mobihome/gunicorn.sock`
+(каталог `0750`, власник `mobihome:www-data`) — з мережі й від інших користувачів недоступний; TCP-порт не відкривається.
+Перед стартом служба виконує `check --deploy --fail-level ERROR` (без Redis, ключа, з помилкою оплати — не стартує:
+`journalctl -u mobihome -n 30`). Перезапуск без простою: `sudo systemctl reload mobihome`.
 
 ## 12. Nginx [сервер]
 
@@ -189,6 +211,7 @@ sudo rm -f /etc/nginx/sites-enabled/default
 Конфіг вмикається після сертифіката (§13), бо посилається на файли сертифіката. Локально `nginx -t` — успішно
 (nginx 1.31 попереджає, що `listen … http2` застарілий; для nginx 1.18/1.24 з Ubuntu цей синтаксис правильний).
 `/media/` — лише публічні фото; `data/private` nginx не роздає; ліміт завантаження — 220 МБ на запит.
+nginx перезаписує `X-Real-IP` і `X-Forwarded-For` своїм `$remote_addr` (підробка клієнтом не діє); `proxy_read_timeout` — 120 с.
 
 ## 13. Домен і HTTPS [сервер]
 
@@ -247,6 +270,8 @@ curl -s -o /dev/null -w '%{http_code}\n' https://mobihome.example/static/admin/c
 curl -s -o /dev/null -w '%{http_code}\n' https://mobihome.example/payments/liqpay/callback/   # 405
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://mobihome.example/payments/liqpay/callback/   # 400
 curl -s -o /dev/null -w '%{http_code}\n' 'https://mobihome.example/media/../data/private/x'   # 404
+redis-cli -n 1 --scan --pattern '*login-fail*' | head                                   # ключі з різними IP, а не «unknown»
+sudo ss -ltnp | grep -E ':(6379|8000)\b'                                                # лише 127.0.0.1/[::1]
 systemctl --failed; journalctl -u mobihome -p warning -n 50 --no-pager
 ```
 
@@ -317,15 +342,20 @@ sudo systemctl start mobihome mobihome-telegram-bot liqpay-sync.timer
 
 ## 19. Відомі обмеження перед запуском
 
-1. **Ліміти спроб за nginx (потрібне виправлення коду, ще не внесене).** За unix-сокетом Gunicorn `REMOTE_ADDR`
-   порожній (перевірено з Gunicorn 25.1), тому `properties/security.py` рахує всіх відвідувачів як одну адресу:
-   10 реєстрацій/год, 5 листів відновлення пароля/год, 5 заявок на консультацію чи аудит/10 хв — **на весь сайт**;
-   кілька десятків невдалих входів блокують вхід усім. Мінімальне виправлення: nginx
-   `proxy_set_header X-Real-IP $remote_addr;` + у `_client_ip` брати `HTTP_X_REAL_IP` лише при `DJANGO_BEHIND_PROXY=True`
-   + тест. Без нього production — NO-GO.
-2. **Лічильники в пам'яті процесу.** `CACHES` не задано (LocMemCache): у кожного з 3 воркерів свої лічильники,
-   вони скидаються при перезапуску. Рекомендовано спільний кеш (`FileBasedCache` у `data/cache/` або `DatabaseCache`).
-3. **Telegram у запиті користувача.** Заявка з фото надсилається в Telegram під час збереження оголошення; при
-   повільній мережі й 10–21 великих фото запит може наблизитись до timeout Gunicorn (60 с). Дані не втрачаються
-   (заявка повториться ботом), але користувач може побачити помилку 502. Пом'якшення без зміни коду:
-   `--timeout 120` у `deploy/mobihome.service` і `proxy_read_timeout 120s` у nginx.
+**Виправлено 26.11.2026 (перевірено nginx 1.31 + Gunicorn 25.1 + Redis 7.4, клієнти з різних IP):**
+1. Адреса клієнта: за unix-сокетом `REMOTE_ADDR` порожній, тож раніше всі відвідувачі мали один лічильник
+   (до виправлення: клієнт B заблокований після помилок клієнта A). Тепер — `X-Real-IP` від nginx, лише при
+   `DJANGO_BEHIND_PROXY=True` і лише від довіреного proxy (unix-сокет або `DJANGO_TRUSTED_PROXY_IPS`), перевірка IPv4/IPv6;
+   `X-Forwarded-For` не використовується. Підроблені клієнтом заголовки nginx перезаписує (обійти ліміт не вдалося).
+2. Спільний кеш: Redis (`properties.cache.ResilientRedisCache`): атомарний `incr` без створення лічильника без
+   терміну дії; 2 воркери — спільні лічильники з TTL; недоступний Redis — сайт працює, ліміти тимчасово не діють.
+
+**Залишкові обмеження:**
+3. **Telegram під час збереження оголошення.** Заявка надсилається в тому ж запиті (після запису в БД). Ліміти
+   мережевих запитів бота: 15 с на текстове повідомлення, 60 с на завантаження фото/альбому; до 21 фото —
+   до 3 завантажень. Timeout Gunicorn і nginx — 120 с. Якщо Telegram дуже повільний і запит обірвано:
+   оголошення **збережене** (на модерації), запис заявки лишається «надсилається», через 10 хв бот надсилає її повторно
+   (до 5 спроб) — перевірено тестами. Якщо Telegram встиг прийняти частину альбому до обриву, повторне надсилання
+   може дати **дубль** фото — при неоднозначному результаті мережевого запиту відсутність дублів не гарантується.
+   Повне усунення — фонове надсилання (черга), не впроваджувалось на цьому етапі.
+4. Ліміти для IPv6 рахуються на окрему адресу (не на мережу /64).

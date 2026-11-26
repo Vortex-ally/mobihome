@@ -8,6 +8,7 @@
 
 - Python ≥ 3.10 (розробка — 3.14), Django 5.2, Bootstrap 5.3 (CDN), Pillow, Gunicorn.
 - БД: SQLite (розробка, за замовчуванням) або PostgreSQL (production, `DJANGO_DB_ENGINE=postgresql` + `psycopg`).
+- Кеш лімітів входу/форм: Redis у production (`DJANGO_REDIS_URL`), локально — пам'ять процесу.
 - Оплата: LiqPay API v7, підпис SHA3-256, Sandbox і бойовий режими.
 
 ## Можливості
@@ -44,7 +45,7 @@ python manage.py test --settings=config.test_settings
 ```
 
 Тести не звертаються до мережі (відповіді LiqPay імітовано). 4 тести пропускаються, якщо в корені є `.env`
-(вони перевіряють запуск без нього). Результати — [TEST_REPORT.md](TEST_REPORT.md).
+(вони перевіряють запуск без нього); ще 4 — без справжнього Redis: `MOBIHOME_TEST_REDIS_URL=redis://127.0.0.1:6379/15`. Результати — [TEST_REPORT.md](TEST_REPORT.md).
 
 ## Документація
 

@@ -1,14 +1,43 @@
 """Допоміжні засоби безпеки: обмеження спроб входу."""
 
 import hashlib
+import ipaddress
 
 from django.conf import settings
 from django.core.cache import cache
 
 
+def _normalize_ip(value):
+    """Канонічна IPv4/IPv6-адреса або None (порожньо, сміття, порт, кілька адрес)."""
+    try:
+        ip = ipaddress.ip_address((value or "").strip())
+    except ValueError:
+        return None
+    if ip.version == 6 and ip.ipv4_mapped:  # ::ffff:203.0.113.7 і 203.0.113.7 — один клієнт
+        ip = ip.ipv4_mapped
+    return ip.compressed
+
+
+def _from_trusted_proxy(remote_addr):
+    # Порожній REMOTE_ADDR — unix-сокет Gunicorn (/run/mobihome, доступ лише nginx); інакше — список proxy.
+    if not remote_addr:
+        return True
+    trusted = {_normalize_ip(ip) for ip in settings.TRUSTED_PROXY_IPS}
+    return _normalize_ip(remote_addr) in trusted
+
+
 def _client_ip(request):
-    # REMOTE_ADDR: за проксі його має коректно виставляти вебсервер (не довіряємо X-Forwarded-For).
-    return request.META.get("REMOTE_ADDR", "") or "unknown"
+    """
+    Адреса клієнта для лімітів. X-Real-IP (nginx перезаписує його значенням $remote_addr) — лише при
+    DJANGO_BEHIND_PROXY=True і лише від довіреного proxy; X-Forwarded-For не використовується ніколи.
+    Без proxy (локально) — REMOTE_ADDR, як і раніше.
+    """
+    remote = (request.META.get("REMOTE_ADDR") or "").strip()
+    if getattr(settings, "BEHIND_PROXY", False) and _from_trusted_proxy(remote):
+        real = _normalize_ip(request.META.get("HTTP_X_REAL_IP"))
+        if real:
+            return real
+    return _normalize_ip(remote) or "unknown"
 
 
 def _keys(request, username):

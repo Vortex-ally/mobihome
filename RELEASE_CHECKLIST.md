@@ -3,14 +3,15 @@
 Позначки: ✅ перевірено (як — у [TEST_REPORT.md](TEST_REPORT.md)) · ⬜ потребує дії власника / зовнішньої перевірки.
 
 ## Код і тести
-- ✅ Повний набір тестів (396) на SQLite і PostgreSQL 18 — без провалів; SQLite→PostgreSQL і backup/restore перевірено.
+- ✅ Повний набір тестів (420) на SQLite і PostgreSQL 18 — без провалів; SQLite→PostgreSQL і backup/restore перевірено.
 - ✅ `manage.py check`, `makemigrations --check`, `check --deploy` (production-подібні змінні), `collectstatic`.
 - ✅ Браузерна перевірка (емуляція) 20 сторінок, зокрема адмінки й модератора, на 320/360/390/430/768/1024/1440 px:
   без горизонтального скролу на сторінках сайту. Фізичні пристрої — не перевірялись.
 - ✅ Перенесення SQLite → PostgreSQL (dumpdata/loaddata) на тестових даних.
 
 ## Перед першим запуском
-- ⬜ **Блокер production:** ліміти входу й форм за nginx рахують усіх відвідувачів разом — внести виправлення з [DEPLOYMENT.md](DEPLOYMENT.md) §19 (п. 1).
+- ✅ Ліміти входу й форм — окремо для кожного відвідувача (X-Real-IP від nginx), спільні для воркерів (Redis); перевірено 26.11 через nginx + Gunicorn + Redis.
+- ⬜ Redis на сервері: лише localhost, `DJANGO_REDIS_URL` у `.env` ([DEPLOYMENT.md](DEPLOYMENT.md) §5а); без нього служба не стартує.
 - ⬜ Сервер: Python ≥ 3.10, PostgreSQL, nginx, certbot ([DEPLOYMENT.md](DEPLOYMENT.md) §1–4).
 - ⬜ `.env` на сервері: `DJANGO_DEBUG=False`, власний `DJANGO_SECRET_KEY`, домени в `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`,
   `DJANGO_BEHIND_PROXY=True`, `DJANGO_DB_*`, `SITE_URL=https://…`, права `600`.

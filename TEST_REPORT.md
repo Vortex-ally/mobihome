@@ -8,9 +8,9 @@
 
 | Прогін | Тестів | Результат |
 |---|---|---|
-| SQLite, з наявним `.env` — `unshare -rn venv/bin/python manage.py test --settings=config.test_settings` | 396 | **OK**, 4 пропущено |
-| SQLite, копія робочого дерева **без `.env`** (перед останнім етапом) | 372 | **OK**, 0 пропущено |
-| PostgreSQL 18 (тимчасовий кластер, через `DJANGO_DB_ENGINE=postgresql`), з `.env` | 396 | **OK**, 4 пропущено |
+| SQLite, з наявним `.env` — `unshare -rn venv/bin/python manage.py test --settings=config.test_settings` | 420 | **OK**, 8 пропущено (4 — `.env`, 4 — без Redis; з Redis — 4) |
+| SQLite, копія робочого дерева **без `.env`** (26.11) | 420 | **OK**, 0 пропущено (з Redis) |
+| PostgreSQL 18 (тимчасовий кластер, через `DJANGO_DB_ENGINE=postgresql`), з `.env` | 420 | **OK**, 4 пропущено (з Redis) |
 | Конкурентні тести (справжні потоки) на PostgreSQL, 3 прогони | 8 | **OK** щоразу |
 
 Провалених тестів у фінальних прогонах немає. **Відоме нестабільне спрацювання:** 25.11 один прогін на SQLite з `.env`
@@ -147,8 +147,22 @@ Playwright + Chrome, реальні вхід і дії трьох demo-акау�
 | `systemd-analyze verify` (mobihome, telegram-bot, liqpay-sync service/timer) | лише відсутні тут `/srv/mobihome/venv/...` |
 | Захист конфігурації LiqPay | `PAYMENTS_ENABLED=True` без ключів і `PLACEMENT_PAYMENT_REQUIRED=True` без оплати — сервер не стартує |
 | Набір без `.env` (копія коду) | 396 OK, 0 пропущено — 4 тести запуску production-конфігурації пройдено |
-| **Знайдено:** `REMOTE_ADDR` за unix-сокетом порожній | ліміти входу/форм — спільні на весь сайт; виправлення запропоновано ([DEPLOYMENT.md](DEPLOYMENT.md) §19), **не внесено** |
+| **Знайдено:** `REMOTE_ADDR` за unix-сокетом порожній | ліміти входу/форм були спільні на весь сайт — **виправлено 26.11**, див. розд. 6в |
 | Знайдено: Gunicorn 25 створює `gunicorn.ctl` у робочому каталозі | додано `--no-control-socket` у `deploy/mobihome.service` |
+
+## 6в. Виправлення production-блокерів (26.11.2026)
+
+| Перевірка | Результат |
+|---|---|
+| SQLite без Redis | 420 тестів, **OK**, 8 пропущено (4 — локальний `.env`; 4 — потрібен справжній Redis) |
+| SQLite + справжній Redis 7.4 (`MOBIHOME_TEST_REDIS_URL`) | 420, **OK**, 4 пропущено (локальний `.env`) |
+| PostgreSQL 18.7 + Redis | 420, **OK**, 4 пропущено (локальний `.env`) |
+| Копія коду без `.env` + Redis | 420, **OK**, 0 пропущено |
+| Нові тести `test_production_hardening` (24) | адреса клієнта (без proxy / unix-сокет / довірений і недовірений proxy / підроблені X-Real-IP і X-Forwarded-For / порожні й некоректні значення / IPv4, IPv6, IPv4-mapped); ліміти окремо для відвідувачів; Redis: 2000 паралельних incr з 4 з'єднань = 2000, TTL зберігається, лічильник не відтворюється без TTL, спільний між «воркерами»; Redis недоступний — вхід і форми працюють, лог без адреси; `properties.E010`; оголошення не губиться при обриві надсилання в Telegram, «завислий» запис надсилається повторно |
+| nginx 1.31 (контейнер) → Gunicorn 25.1 (2 воркери, unix-сокет) → Redis 7.4; клієнти — окремі контейнери з різними IP у внутрішній мережі Docker | **до виправлення:** клієнт B отримав 429 після помилок клієнта A; **після:** A — 8×200, далі 429; B, D — 200; C з підробленими `X-Real-IP`/`X-Forwarded-For` — 8×200, далі 429 (обійти ліміт не вдалося, ключів підроблених адрес — 0); у Redis окремі лічильники з TTL |
+| Redis недоступний (той самий ланцюжок) | вхід — 200 за ~1 с, `/healthz/` — ok |
+| `check --deploy` (production-подібно) | з Redis — лише W005/W021; без Redis — `properties.E010`, код виходу 1 (служба не стартує) |
+| `nginx -t`, `systemd-analyze verify`, `makemigrations --check`, `git diff --check` | успішно (verify — лише відсутні тут `/srv/mobihome/venv/...`) |
 
 ## 7. Що не перевірено
 
