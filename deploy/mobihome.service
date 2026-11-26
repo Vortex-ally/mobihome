@@ -1,0 +1,28 @@
+# /etc/systemd/system/mobihome.service — Gunicorn для MobiHome.
+# Шляхи й користувача замініть під свій сервер (див. DEPLOYMENT.md).
+[Unit]
+Description=MobiHome (Django + Gunicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=notify
+User=mobihome
+Group=www-data
+WorkingDirectory=/srv/mobihome
+EnvironmentFile=/srv/mobihome/.env
+RuntimeDirectory=mobihome
+ExecStart=/srv/mobihome/venv/bin/gunicorn config.wsgi:application \
+    --bind unix:/run/mobihome/gunicorn.sock \
+    --workers 3 --timeout 60 --no-control-socket \
+    --access-logfile - --error-logfile -
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+# Захист: лише читання системи; запис — у data/ (SQLite, якщо використовується) і media/.
+ProtectSystem=full
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

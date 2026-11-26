@@ -1,0 +1,11 @@
+# /etc/systemd/system/liqpay-sync.service — звірка незавершених платежів LiqPay (Status API).
+[Unit]
+Description=MobiHome: liqpay_sync_pending
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=mobihome
+WorkingDirectory=/srv/mobihome
+EnvironmentFile=/srv/mobihome/.env
+ExecStart=/srv/mobihome/venv/bin/python manage.py liqpay_sync_pending

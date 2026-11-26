@@ -1,0 +1,18 @@
+# /etc/systemd/system/mobihome-telegram-bot.service — Telegram-бот модерації (long polling).
+[Unit]
+Description=MobiHome: Telegram-бот модерації
+After=network-online.target mobihome.service
+Wants=network-online.target
+
+[Service]
+User=mobihome
+WorkingDirectory=/srv/mobihome
+EnvironmentFile=/srv/mobihome/.env
+ExecStart=/srv/mobihome/venv/bin/python manage.py telegram_moderation_bot
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

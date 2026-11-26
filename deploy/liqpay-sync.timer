@@ -1,0 +1,11 @@
+# /etc/systemd/system/liqpay-sync.timer — запуск звірки кожні 10 хвилин.
+[Unit]
+Description=MobiHome: liqpay_sync_pending кожні 10 хв
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+Unit=liqpay-sync.service
+
+[Install]
+WantedBy=timers.target
