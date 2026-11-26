@@ -1,14 +1,14 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Порівняння об'єктів — mobi home{% endblock %}
+{% block title %}Порівняння об'єктів — mobi Home{% endblock %}
 
 {% block content %}
 <div class="wrap py-5">
     <div class="d-flex align-items-center justify-content-between mb-4">
         <div>
             <h1 class="h3 fw-bold text-white mb-1">Порівняння об'єктів</h1>
-            <p class="text-muted small mb-0">Порівняйте параметри ціни, площі та чеклисту доступності пліч-о-пліч</p>
+            <p class="text-muted small mb-0">Порівняйте ціну, площу та чек-лист доступності пліч-о-пліч</p>
         </div>
         <a href="{% url 'properties:home' %}" class="btn btn-outline-light btn-sm">
             + Додати об'єкти з каталогу
@@ -66,7 +66,7 @@
                 <!-- Audit Checklist Comparison -->
                 <tr class="table-active">
                     <td colspan="{{ properties|length|add:1 }}" class="text-start px-4 fw-bold text-info text-uppercase small" style="letter-spacing: 0.05em; background: rgba(0,136,204,0.1);">
-                        Чеклист доступності за ДБН В.2.2-17
+                        Чек-лист доступності за ДБН В.2.2-17
                     </td>
                 </tr>
 

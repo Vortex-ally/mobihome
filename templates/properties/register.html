@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Реєстрація — mobi home{% endblock %}
+{% block title %}Реєстрація — mobi Home{% endblock %}
 
 {% block content %}
 <div class="wrap">
@@ -7,7 +7,7 @@
     <div class="col-md-6 col-lg-5">
         <div class="card card-premium card-body py-3 px-3 px-md-4">
             <h1 class="h5 mb-2" style="color: var(--text);">Реєстрація</h1>
-            <p class="text-muted small mb-3" style="font-size: 0.8125rem;">Після реєстрації ви зможете додати оголошення та оплатити публікацію.</p>
+            <p class="text-muted small mb-3" style="font-size: 0.8125rem;">Після реєстрації ви зможете додати оголошення й безкоштовно опублікувати його після модерації.</p>
             <form method="post" action="" class="register-form">
                 {% csrf_token %}
                 {% for field in form %}

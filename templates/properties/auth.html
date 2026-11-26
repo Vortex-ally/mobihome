@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Вхід та реєстрація — mobi home{% endblock %}
+{% block title %}Вхід та реєстрація — mobi Home{% endblock %}
 
 {% block content %}
 <div class="auth-page-wrap">
@@ -18,17 +18,19 @@
             {% endif %}
 
             <div id="auth-panel-login" class="auth-panel" style="display: {% if active_tab == 'login' %}block{% else %}none{% endif %};">
-                <h1 class="auth-title">Вхід на сайт mobi home</h1>
+                <h1 class="auth-title">Вхід на сайт mobi Home</h1>
                 <form method="post" action="{% url 'properties:auth' %}{% if next_url %}?next={{ next_url|urlencode }}{% endif %}" class="auth-form">
                     {% csrf_token %}
                     <input type="hidden" name="form_type" value="login">
                     <input type="hidden" name="next" value="{{ next_url }}">
                     <div class="auth-field-wrap">
+                        <label for="id_username_login" class="visually-hidden">Логін, телефон або e-mail</label>
                         <input type="text" name="username" id="id_username_login" class="auth-input" placeholder="Телефон або e-mail" autocomplete="username" required value="{{ login_form.username.value|default:'' }}">
                         <span class="auth-input-icon auth-input-icon-info" title="Логін або email для входу">i</span>
                     </div>
                     {% if login_form.username.errors %}<div class="auth-error">{{ login_form.username.errors.0 }}</div>{% endif %}
                     <div class="auth-field-wrap">
+                        <label for="id_password_login" class="visually-hidden">Пароль</label>
                         <input type="password" name="password" id="id_password_login" class="auth-input" placeholder="Пароль" autocomplete="current-password" required>
                         <button type="button" class="auth-input-icon auth-toggle-pwd" aria-label="Показати пароль" title="Показати пароль">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -70,11 +72,11 @@
                     </div>
                 </div>
                 {% endif %}
-                <p class="auth-switch-text">Немає облікового запису? <a href="#" class="auth-switch auth-link" data-tab="register">Зареєструватися на mobi home →</a></p>
+                <p class="auth-switch-text">Немає облікового запису? <a href="#" class="auth-switch auth-link" data-tab="register">Зареєструватися на mobi Home →</a></p>
             </div>
 
             <div id="auth-panel-register" class="auth-panel" style="display: {% if active_tab == 'register' %}block{% else %}none{% endif %};">
-                <h1 class="auth-title">Реєстрація на mobi home</h1>
+                <h1 class="auth-title">Реєстрація на mobi Home</h1>
                 <form method="post" action="{% url 'properties:auth' %}{% if next_url %}?next={{ next_url|urlencode }}{% endif %}" class="auth-form">
                     {% csrf_token %}
                     <input type="hidden" name="form_type" value="register">
