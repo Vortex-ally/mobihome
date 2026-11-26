@@ -150,8 +150,9 @@ class AdminPanelTests(TestCase):
         prop = make_property(public=False)
         for action in ("make_approved", "unverify_by_admin", "make_verified_by_admin",
                        "make_rejected", "make_verified"):
+            extra = {"post": "yes", "reason": "Нечіткі фото"} if action == "make_rejected" else {}
             resp = self.client.post(
-                "/admin/properties/property/", {"action": action, "_selected_action": [prop.pk]}
+                "/admin/properties/property/", {"action": action, "_selected_action": [prop.pk], **extra}
             )
             self.assertEqual(resp.status_code, 302, action)
         prop.refresh_from_db()

@@ -42,7 +42,8 @@ class TariffTests(TestCase):
         t = Tariff.placement()
         self.assertEqual((t.name, t.price, t.currency, t.duration_days, t.is_active),
                          ("Розміщення квартири", Decimal("99.00"), "UAH", 30, True))
-        self.assertEqual(Tariff.objects.count(), 1)
+        # Один тариф розміщення; решта — тарифи просування (міграція 0029).
+        self.assertEqual(Tariff.objects.filter(promotion_rank__isnull=True).count(), 1)
 
     def test_tariff_edit_does_not_change_existing_payment(self):
         owner = make_user("o")
@@ -304,9 +305,16 @@ class LegacyTopTests(TestCase):
         prop = make_property(owner=owner, public=False)
         self.client.force_login(owner)
         html = self.client.get(f"/payment/{prop.pk}/").content.decode()
-        self.assertIn("Розміщення квартири", html)
-        self.assertIn("99 грн", html)
-        self.assertNotIn("ТОП", html)
+        # Вимога замовника: публікація безкоштовна; оплата розміщення 99/30 — лише при обов'язковій оплаті.
+        self.assertIn("Безкоштовна публікація", html)
+        self.assertNotIn("Розміщення квартири", html)
+        with self.settings(PLACEMENT_PAYMENT_REQUIRED=True):
+            required = self.client.get(f"/payment/{prop.pk}/").content.decode()
+        self.assertIn("Розміщення квартири", required)
+        self.assertIn("99 грн", required)
+        # Нові тарифи просування продаються через LiqPay (старий ТОП з is_featured — ні).
+        self.assertIn("ТОП №1", html)
+        self.assertNotIn("Підняти у ТОП", html)
 
 
 class LogoutTests(TestCase):

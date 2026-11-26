@@ -90,7 +90,8 @@ def _cross_order_duplicates(payment):
     адміністратору перегляду, пропуск — непомічене подвійне списання.
     Викликається під select_for_update оголошення, тож паралельні зарахування бачать одне одного.
     """
-    others = Payment.objects.filter(property_id=payment.property_id).exclude(pk=payment.pk)
+    # Лише той самий тариф: оплата розміщення і ТОП (або два різні ТОП) — різні послуги, не подвійне списання.
+    others = Payment.objects.filter(property_id=payment.property_id, tariff_id=payment.tariff_id).exclude(pk=payment.pk)
     newer = Q(created_at__gt=payment.created_at) | Q(created_at=payment.created_at, pk__gt=payment.pk)
     older = Q(created_at__lt=payment.created_at) | Q(created_at=payment.created_at, pk__lt=payment.pk)
     open_or_credited = (Q(status__in=OPEN_STATUSES, applied_at__isnull=True)
@@ -237,7 +238,7 @@ def new_payment_blocked_until(prop, is_test):
     return last.created_at + window if last else None
 
 
-def get_or_create_open_payment(user, prop, is_test=False):
+def get_or_create_open_payment(user, prop, is_test=False, tariff=None):
     """
     Повертає (payment, created). Якщо незавершена оплата вже є — повертає її (без нової).
     Паралельні виклики: унікальний частковий індекс БД пропускає лише одну вставку;
@@ -256,7 +257,7 @@ def get_or_create_open_payment(user, prop, is_test=False):
         )
     try:
         with transaction.atomic():
-            return create_payment(user, prop, is_test=is_test), True
+            return create_payment(user, prop, tariff=tariff, is_test=is_test), True
     except IntegrityError:
         existing = open_payment_for(prop)
         if existing is None:
@@ -281,6 +282,8 @@ def create_payment(user, prop, tariff=None, is_test=False):
         amount=tariff.price,
         currency=tariff.currency,
         duration_days=tariff.duration_days,
+        duration_hours=tariff.duration_hours,
+        promotion_rank=tariff.promotion_rank,
         is_test=is_test,
     )
 
@@ -298,6 +301,42 @@ def is_publishable(prop):
     return all((prop.is_published, approved, prop.is_verified_by_admin, prop.archived_at is None))
 
 
+def _log_resubmission(prop):
+    """Історія модерації й сповіщення модераторів, коли оплата простроченого оголошення повертає його в чергу."""
+    from .models import ModerationAction, ModerationEvent, ModerationSource
+
+    ModerationEvent.objects.create(property=prop, action=ModerationAction.SUBMITTED, source=ModerationSource.SYSTEM,
+                                   from_status=ModerationStatus.APPROVED, to_status=prop.moderation_status,
+                                   reason="Оплата розміщення простроченого оголошення — повторна модерація.",
+                                   version=prop.moderation_version)
+    from .moderation import _notify_after_commit
+
+    _notify_after_commit(prop.pk)
+
+
+def is_catalog_visible(prop, now=None):
+    """Оголошення показується в каталозі (ті самі умови, що Property.objects.public())."""
+    now = now or timezone.now()
+    if not is_publishable(prop):
+        return False
+    if getattr(settings, "PLACEMENT_PAYMENT_REQUIRED", False):
+        return prop.placement_until is not None and prop.placement_until > now
+    return True
+
+
+def _activate_promotion(payment, now):
+    """
+    Запускає оплачене просування. Оголошення не змінюється: ранг у каталозі обчислюється з активних
+    періодів платежів (active_promotions), тож після period_end просування зникає саме.
+    Кілька оплат того самого рангу йдуть послідовно (дні не губляться); різні ранги — незалежно.
+    """
+    latest_end = (Payment.objects.filter(property_id=payment.property_id, status=PaymentStatus.SUCCESS,
+                                         promotion_rank=payment.promotion_rank, period_end__gt=now)
+                  .exclude(pk=payment.pk).order_by("-period_end").values_list("period_end", flat=True).first())
+    start = latest_end or now
+    payment.period_start, payment.period_end, payment.activated_at = start, start + payment.duration(), now
+
+
 def _activate(payment, prop, now):
     start = prop.placement_until if prop.placement_until and prop.placement_until > now else now
     end = start + timedelta(days=payment.duration_days)
@@ -307,6 +346,12 @@ def _activate(payment, prop, now):
 
 def _apply_period_rules(payment, prop, now):
     """Визначає, що робити з оголошенням після зарахованої оплати. Повертає змінені поля."""
+    if payment.promotion_rank is not None:
+        # Просування: лише для оголошення, яке вже показується в каталозі; інакше — при публікації
+        # після модерації (activate_on_publication). Модерацію й розміщення не змінює.
+        if is_catalog_visible(prop, now):
+            _activate_promotion(payment, now)
+        return []
     if is_live(prop, now):
         # Продовження активного оголошення: +30 днів до поточної дати завершення.
         _activate(payment, prop, now)
@@ -314,8 +359,11 @@ def _apply_period_rules(payment, prop, now):
     if prop.placement_until is not None and prop.placement_until <= now:
         # Прострочене: повертається на модерацію; дні стартують з повторної публікації.
         if prop.moderation_status == ModerationStatus.APPROVED:
+            # Повторна модерація простроченого оголошення (оплата НЕ схвалює — лише повертає в чергу).
             prop.moderation_status = ModerationStatus.PENDING
-            return ["moderation_status"]
+            prop.moderation_version += 1
+            prop.moderation_submitted_at = now
+            return ["moderation_status", "moderation_version", "moderation_submitted_at"]
         return []
     if prop.placement_until is None and is_publishable(prop):
         # Уже схвалене модератором, але ще не оплачувалось — публікація починається зараз.
@@ -392,6 +440,8 @@ def _credit_locked(payment, paid_amount, paid_currency, transaction_id, paid_at)
         raise PlacementError("Ця транзакція провайдера вже прив'язана до іншого платежу.")
     if prop_fields:
         prop.save(update_fields=prop_fields + ["updated_at"])
+        if "moderation_status" in prop_fields:
+            _log_resubmission(prop)
     if duplicates:
         _flag_property_duplicates(payment, duplicates)
         payment.save(update_fields=["needs_review", "updated_at"])
@@ -447,11 +497,20 @@ def activate_on_publication(prop_id):
         if not pending:
             return 0
         now = timezone.now()
-        for payment in pending:
+        activated = 0
+        placements = [p for p in pending if p.promotion_rank is None]
+        for payment in placements:
             _activate(payment, prop, now)
             payment.save(update_fields=["period_start", "period_end", "activated_at", "updated_at"])
-        prop.save(update_fields=["placement_until", "updated_at"])
-        return len(pending)
+            activated += 1
+        if placements:
+            prop.save(update_fields=["placement_until", "updated_at"])
+        if is_catalog_visible(prop, now):
+            for payment in (p for p in pending if p.promotion_rank is not None):
+                _activate_promotion(payment, now)
+                payment.save(update_fields=["period_start", "period_end", "activated_at", "updated_at"])
+                activated += 1
+        return activated
 
 
 def transition_candidates():
@@ -495,3 +554,27 @@ def mark_unsuccessful(payment_id, status, message=""):
         payment.error_message = (message or "")[:255]
         payment.save(update_fields=["status", "error_message", "updated_at"])
         return payment
+
+
+def active_promotions(qs, now=None):
+    """
+    Анотує оголошення активним просуванням: promo_rank (1 — ТОП №1, 3 — ТОП №3, 5 — активна публікація,
+    None — немає), promo_since, promo_until. Ураховуються лише зараховані (success) платежі з діючим
+    періодом: прострочене чи повернене (reversed) просування не впливає на каталог.
+    """
+    from django.db.models import OuterRef, Subquery
+
+    now = now or timezone.now()
+    current = (Payment.objects.filter(property=OuterRef("pk"), status=PaymentStatus.SUCCESS,
+                                      promotion_rank__isnull=False, period_start__lte=now, period_end__gt=now)
+               .order_by("promotion_rank", "-period_start", "-pk"))
+    return qs.annotate(promo_rank=Subquery(current.values("promotion_rank")[:1]),
+                       promo_since=Subquery(current.values("period_start")[:1]),
+                       promo_until=Subquery(current.values("period_end")[:1]))
+
+
+def promotion_ordering(*tail):
+    """Порядок каталогу: ТОП №1 → ТОП №3 → активна публікація → решта; у межах рангу — свіжіша активація."""
+    from django.db.models import F
+
+    return (F("promo_rank").asc(nulls_last=True), F("promo_since").desc(nulls_last=True), *tail, "-pk")

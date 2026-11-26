@@ -37,3 +37,29 @@ def register_login_failure(request, username):
 
 def reset_login_failures(request, username):
     cache.delete_many(list(_keys(request, username)))
+
+
+# Ліміти для форм, які анонім може надсилати масово (спам, розсилка листів, засмічення БД).
+# Лічильник рахує лише успішно прийняті запити; кеш — той самий, що для входу.
+FORM_LIMITS = {
+    "register": (10, 3600),        # нових акаунтів з однієї IP за годину
+    "password_reset": (5, 3600),   # листів відновлення з однієї IP за годину
+    "consultation": (5, 600),      # заявок на консультацію за 10 хв
+    "audit_request": (5, 600),     # заявок на аудит за 10 хв
+}
+
+
+def form_rate_limited(request, scope):
+    """True — ліміт для IP вичерпано (запит не обробляти). Сам не рахує: див. count_form_submission."""
+    limit, _window = FORM_LIMITS[scope]
+    return cache.get(f"form-rate:{scope}:{_client_ip(request)}", 0) >= limit
+
+
+def count_form_submission(request, scope):
+    _limit, window = FORM_LIMITS[scope]
+    key = f"form-rate:{scope}:{_client_ip(request)}"
+    if not cache.add(key, 1, window):
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, window)

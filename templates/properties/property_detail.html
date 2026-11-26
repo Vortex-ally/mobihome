@@ -9,7 +9,7 @@
     <div class="d-flex align-items-center gap-2.5">
         <span class="fs-5">⏳</span>
         <div style="font-size: 0.95rem;">
-            <strong>Оголошення на модерації:</strong> Заявка та фотографії перевіряються адміністратором.
+            <strong>Оголошення на модерації:</strong> Оголошення та фотографії перевіряє модератор.
         </div>
     </div>
     <span class="badge bg-warning text-dark px-3 py-2 rounded-pill fw-semibold" style="font-size: 0.8rem;">На модерації</span>
@@ -34,6 +34,7 @@
     <div class="d-flex flex-wrap gap-2 mb-2.5 align-items-center">
         <span class="listing-badge {% if property.listing_type == 'sale' %}listing-badge--sale{% else %}listing-badge--rent{% endif %}" style="font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;">{{ property.get_listing_type_display }}</span>
         {% if property.is_featured and featured_until_display %}<span class="listing-badge" style="background: var(--accent); color: var(--bg-card); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-star-fill me-1" viewBox="0 0 16 16"><path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/></svg>ТОП</span>{% endif %}
+        {% if promo_rank == 1 or promo_rank == 3 %}<span class="listing-badge listing-badge--featured listing-badge--top" style="font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;" title="Платне просування до {{ promo_until|date:'d.m.Y H:i' }}">{% if promo_rank == 1 %}ТОП №1{% else %}ТОП №3{% endif %}</span>{% elif promo_rank == 5 %}<span class="listing-badge listing-badge--active" style="font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;" title="Активна публікація до {{ promo_until|date:'d.m.Y H:i' }}">Активне</span>{% endif %}
         {% if property.is_verified_by_admin %}<span class="listing-badge" style="background: rgba(25, 135, 84, 0.12); color: #198754; border: 1px solid rgba(25, 135, 84, 0.3); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-check-circle-fill me-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>Фото перевірено</span>{% endif %}
         {% if property.is_verified %}<span class="listing-badge" style="background: rgba(25, 135, 84, 0.12); color: #198754; border: 1px solid rgba(25, 135, 84, 0.3); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" class="bi bi-check-circle-fill me-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>Перевірено</span>{% endif %}
         {% if audit %}<span class="listing-badge" style="background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 8px;">Аудит проведено</span>{% endif %}
@@ -131,7 +132,7 @@
                 </div>
 
                 <div class="d-flex flex-wrap gap-2 align-items-center">
-                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1.5" style="font-size: 0.82rem;">
+                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1.5" style="white-space: normal; max-width: 100%; text-align: left; font-size: 0.82rem;">
                         <span style="font-size: 8px;">●</span> ⚡ Прямий контакт з власником
                     </span>
                     <span class="badge bg-secondary bg-opacity-10 text-muted border border-secondary border-opacity-25 rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1.5" style="font-size: 0.82rem;">
@@ -263,7 +264,7 @@
                 </div>
                 <div>
                     <h6 class="mb-1 fw-bold text-success" style="font-size: 0.95rem;">Фотоперевірене оголошення</h6>
-                    <p class="mb-0 small" style="color: var(--text); opacity: 0.85;">Адміністратор особисто підтвердив фотографії та характеристики цього об'єкта.</p>
+                    <p class="mb-0 small" style="color: var(--text); opacity: 0.85;">Модератор перевірив фотографії та характеристики цього об'єкта.</p>
                 </div>
             </div>
             {% endif %}
@@ -420,7 +421,7 @@
 
                     {% if property.owner %}
                     <a href="{% url 'properties:public_profile' property.owner.username %}" class="btn btn-light btn-sm w-100 text-muted border text-center d-flex align-items-center justify-content-center" style="height: 38px; border-radius: 10px; background: var(--bg); font-size: 0.84rem; font-weight: 500;">
-                        Всі оголошення автора ↗
+                        Усі оголошення автора ↗
                     </a>
                     {% endif %}
 
@@ -432,6 +433,11 @@
                             {% if not property.archived_at %}
                             <a href="{% url 'properties:payment' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: var(--bg); font-size: 0.85rem; color: var(--text); font-weight: 500; border: 1px solid var(--border);">
                                 💳 <span style="color: var(--text);">{% if property.placement_active %}Розміщено до {{ property.placement_until|date:"d.m.Y" }} · продовжити{% else %}Публікація та оплата{% endif %}</span>
+                            </a>
+                            {% endif %}
+                            {% if not property.archived_at %}
+                            <a href="{% url 'properties:edit_listing' property.pk %}" class="btn btn-light btn-sm py-2 text-start px-3 d-flex align-items-center gap-2" style="border-radius: 10px; background: var(--bg); font-size: 0.85rem; color: var(--text); font-weight: 500; border: 1px solid var(--border);">
+                                ✏️ <span style="color: var(--text);">Редагувати оголошення</span>
                             </a>
                             {% endif %}
                             {% if user.is_staff %}

@@ -6,10 +6,11 @@ import json
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
+from django.contrib.auth import views as _auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.core.paginator import Paginator
-from django.db.models import Avg, Case, Count, IntegerField, Q, Value, When
+from django.db.models import Avg, Case, Count, IntegerField, Q, Sum, Value, When
 from django.contrib.auth.models import User
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -45,7 +46,14 @@ from .models import (
     Tariff,
     score_to_status,
 )
-from .security import login_is_locked, register_login_failure, reset_login_failures
+from .placement import active_promotions, is_catalog_visible, promotion_ordering
+from .security import (
+    count_form_submission,
+    form_rate_limited,
+    login_is_locked,
+    register_login_failure,
+    reset_login_failures,
+)
 from .social_auth import (  # noqa: F401 (реекспорт для urls.py)
     diia_disabled,
     google_callback,
@@ -73,6 +81,15 @@ CITY_COORDINATES = {
 PROPERTIES_PER_PAGE = 9
 
 
+def _mark_promoted(props):
+    """Позначка ТОП на картці для діючого платного ТОП (ранг 1 або 3); активна публікація — окремо."""
+    for prop in props:
+        rank = getattr(prop, "promo_rank", None)
+        if rank in (Tariff.RANK_TOP1, Tariff.RANK_TOP3):
+            prop.featured_active = True
+        prop.promo_active_boost = rank == Tariff.RANK_ACTIVE
+
+
 def index(request):
     """Головна лендінг-сторінка: герой, статистика, обрані оголошення, CTA."""
     now_index = timezone.now()
@@ -91,8 +108,10 @@ def index(request):
                 output_field=IntegerField(),
             )
         )
-        .order_by("-is_featured_active", "-created_at")[:6]
     )
+    featured = list(active_promotions(featured, now_index).order_by(
+        *promotion_ordering("-is_featured_active", "-created_at"))[:6])
+    _mark_promoted(featured)
     _assign_listing_photo_urls(featured)
     total_count = Property.objects.public().count()
     cities_count = (
@@ -315,15 +334,14 @@ def home(request):
     elif sort == "score":
         qs = qs.order_by("-audit__total_score")
     else:
-        qs = qs.order_by("-is_featured_active", "-created_at")
+        # Платне просування (ТОП №1 → ТОП №3 → активна публікація), далі старий ТОП і новіші.
+        qs = active_promotions(qs, now).order_by(*promotion_ordering("-is_featured_active", "-created_at"))
 
     total_count = qs.count()
     paginator = Paginator(qs, PROPERTIES_PER_PAGE)
-    page_number = request.GET.get("page", 1)
-    try:
-        page_obj = paginator.page(int(page_number))
-    except (ValueError, TypeError):
-        page_obj = paginator.page(1)
+    # get_page: нечислова сторінка -> перша, завелика (?page=999) -> остання, без 500.
+    page_obj = paginator.get_page(request.GET.get("page", 1))
+    _mark_promoted(page_obj.object_list)
     _assign_listing_photo_urls(page_obj.object_list)
 
     # Список міст для фільтра (унікальні, відсортовані, нормалізовані)
@@ -541,6 +559,8 @@ def property_detail(request, pk):
     featured_until_display = (
         prop.featured_until if prop.featured_until and prop.featured_until > now else None
     )
+    promo = active_promotions(Property.objects.filter(pk=prop.pk), now).values(
+        "promo_rank", "promo_until").first() or {}
 
     rows = []
     if audit:
@@ -596,6 +616,8 @@ def property_detail(request, pk):
         "can_edit_audit": can_edit_audit,
         "property_photos": property_photos,
         "featured_until_display": featured_until_display,
+        "promo_rank": promo.get("promo_rank"),
+        "promo_until": promo.get("promo_until"),
         "is_favorite": is_favorite,
         "similar_listings": _similar_listings(prop),
         # Координати лише рівня міста (геокодування адреси немає) — показуються як приблизні.
@@ -729,10 +751,14 @@ def auth_page(request):
     if request.method == "POST":
         form_type = request.POST.get("form_type", "login")
         redirect_to = next_url or reverse("properties:add_listing")
-        if form_type == "register":
+        if form_type == "register" and form_rate_limited(request, "register"):
+            messages.error(request, "Забагато реєстрацій з вашої мережі. Спробуйте пізніше.")
+            active_tab = "register"
+        elif form_type == "register":
             register_form = RegisterForm(request.POST)
             if register_form.is_valid():
                 user = register_form.save()
+                count_form_submission(request, "register")
                 login(request, user)
                 messages.success(request, "Реєстрація успішна. Додайте ваше оголошення.")
                 return redirect(redirect_to)
@@ -763,7 +789,7 @@ def auth_page(request):
                 messages.success(request, "Ви успішно увійшли.")
                 return redirect(redirect_to)
             register_login_failure(request, username)
-            messages.error(request, "Невірний логін або пароль.")
+            messages.error(request, "Неправильний логін або пароль.")
             active_tab = "login"
     _prepare_login_form(login_form)
     return render(
@@ -815,22 +841,48 @@ def login_view(request):
 @login_required(login_url="/auth/")
 def add_listing(request):
     """Форма додавання оголошення (всі поля + рівні доступності). Після збереження — редірект на оплату."""
+    return _listing_form(request, None)
+
+
+@login_required(login_url="/auth/")
+def edit_listing(request, pk):
+    """
+    Редагування оголошення власником (або адміністратором). Чуже/архівне — 404.
+    Після змін оголошення повертається на модерацію (і зникає з каталогу до схвалення);
+    оплачене розміщення й просування не змінюються.
+    """
+    prop = get_object_or_404(Property, pk=pk)
+    if not _can_manage_property(request.user, prop) or prop.archived_at:
+        raise Http404("Оголошення не знайдено.")
+    return _listing_form(request, prop)
+
+
+def _listing_form(request, instance):
+    editing = instance is not None
     if request.method == "POST":
-        form = AddListingForm(request.POST, request.FILES)
+        form = AddListingForm(request.POST, request.FILES, instance=instance)
         if form.is_valid():
             prop = form.save(commit=False)
-            prop.owner = request.user
+            if not editing:
+                prop.owner = request.user
             prop.save()
             form.save_m2m()
+            start = prop.extra_photos.count() if editing else 0
             for i, f in enumerate(form.cleaned_extra_photos):
-                PropertyPhoto.objects.create(property=prop, image=f, order=i)
-            messages.success(request, "Оголошення збережено. Оберіть спосіб публікації.")
+                PropertyPhoto.objects.create(property=prop, image=f, order=start + i)
+            # Нове або змінене оголошення — у чергу модерації (спільний сервіс: історія, Telegram).
+            from . import moderation
+            moderation.submit(prop.pk, actor=request.user, source=moderation.ModerationSource.OWNER)
+            if editing:
+                messages.success(request, "Зміни збережено. Оголошення знову перевірить модератор.")
+            else:
+                messages.success(request, "Оголошення збережено. Оберіть спосіб публікації.")
             return redirect("properties:payment", pk=prop.pk)
         else:
             messages.error(request, "Виправте помилки у формі.")
     else:
-        form = AddListingForm()
-        
+        form = AddListingForm(instance=instance)
+
     # Групування зручностей для шаблону
     from .models import Feature
     features = Feature.objects.all().order_by('category', 'name')
@@ -840,7 +892,7 @@ def add_listing(request):
         if cat not in raw_groups:
             raw_groups[cat] = []
         raw_groups[cat].append(feature)
-        
+
     ordered_groups = []
     category_names = {
         'apartment': 'В квартирі',
@@ -853,15 +905,17 @@ def add_listing(request):
                 'name': category_names.get(cat_key, 'Інше'),
                 'features': raw_groups[cat_key]
             })
-            
+
     # Список вибраних зручностей (для збереження стану при помилках валідації)
     checked_features = form['features'].value() or []
-    checked_features = [str(x) for x in checked_features]
+    checked_features = [str(getattr(x, "pk", x)) for x in checked_features]
 
     context = {
         "form": form,
         "grouped_features": ordered_groups,
         "checked_features": checked_features,
+        "editing": editing,
+        "property": instance,
     }
     return render(request, "properties/add_listing.html", context)
 
@@ -926,6 +980,13 @@ def profile(request):
     )
     
     user_payments = request.user.payments.select_related("property").order_by("-created_at")[:50]
+    own = Property.objects.filter(owner=request.user, archived_at__isnull=True)
+    owner_stats = {
+        "views": own.aggregate(total=Sum("view_count"))["total"] or 0,
+        "favorites": PropertyFavorite.objects.filter(property__in=own).count(),
+        "published": own.filter(pk__in=Property.objects.public().values("pk")).count(),
+        "pending": own.filter(moderation_status=ModerationStatus.PENDING).count(),
+    }
     reviews = ProfileReview.objects.filter(target_user=request.user)
     avg_rating = reviews.aggregate(Avg("rating"))["rating__avg"]
 
@@ -944,6 +1005,7 @@ def profile(request):
         "user_listings": user_listings, 
         "favorite_listings": favorite_listings,
         "user_payments": user_payments,
+        "owner_stats": owner_stats,
         "form": form,
         "reviews": reviews,
         "avg_rating": avg_rating,
@@ -954,35 +1016,27 @@ def profile(request):
 
 
 @login_required(login_url="/auth/")
+@require_POST
 def admin_approve_property(request, pk):
-    """Схвалення оголошення адміністратором та підтвердження фотомодерації."""
-    if not (request.user.is_staff or request.user.is_superuser):
-        messages.error(request, "Доступ заборонено. Потрібні права адміністратора.")
-        return redirect("properties:profile")
-    if request.method == "POST":
-        prop = get_object_or_404(Property, pk=pk)
-        prop.moderation_status = ModerationStatus.APPROVED
-        prop.is_published = True
-        prop.is_verified_by_admin = True
-        prop.verified_at = timezone.now()
-        prop.moderation_note = ""
-        prop.save(
-            update_fields=[
-                "moderation_status",
-                "is_published",
-                "is_verified_by_admin",
-                "verified_at",
-                "moderation_note",
-            ]
-        )
-        messages.success(request, f"Оголошення «{prop.name}» успішно схвалено та пройшло фотоперевірку!")
+    """Схвалення оголошення модератором (спільний сервіс модерації: права, статус, історія)."""
+    from . import moderation
+
+    try:
+        prop = moderation.approve(get_object_or_404(Property, pk=pk).pk, actor=request.user,
+                                  source=moderation.ModerationSource.SITE,
+                                  allowed_from=(ModerationStatus.PENDING, ModerationStatus.REJECTED))
+        messages.success(request, f"Оголошення «{prop.name}» схвалено й опубліковано.")
+    except moderation.ModerationError as exc:
+        messages.error(request, str(exc))
     return redirect("properties:profile")
 
 
 @login_required(login_url="/auth/")
 def admin_verify_photos(request, pk):
-    """Підтвердження лише фотомодерації для оголошення адміністратором."""
-    if not (request.user.is_staff or request.user.is_superuser):
+    """Підтвердження лише фотомодерації для оголошення модератором."""
+    from .moderation import can_moderate
+
+    if not can_moderate(request.user):
         messages.error(request, "Доступ заборонено. Потрібні права адміністратора.")
         return redirect("properties:profile")
     if request.method == "POST":
@@ -995,20 +1049,20 @@ def admin_verify_photos(request, pk):
 
 
 @login_required(login_url="/auth/")
+@require_POST
 def admin_reject_property(request, pk):
-    """Відхилення оголошення адміністратором із коментарем."""
-    if not (request.user.is_staff or request.user.is_superuser):
-        messages.error(request, "Доступ заборонено. Потрібні права адміністратора.")
-        return redirect("properties:profile")
-    if request.method == "POST":
-        prop = get_object_or_404(Property, pk=pk)
-        note = request.POST.get("moderation_note", "").strip()
-        prop.moderation_status = ModerationStatus.REJECTED
-        prop.moderation_note = note
-        prop.save(update_fields=["moderation_status", "moderation_note"])
-        messages.warning(request, f"Оголошення «{prop.name}» відхилено.")
-    return redirect("properties:profile")
+    """Відхилення оголошення модератором — лише з причиною (її бачить власник)."""
+    from . import moderation
 
+    try:
+        prop = moderation.reject(get_object_or_404(Property, pk=pk).pk, actor=request.user,
+                                 reason=request.POST.get("moderation_note", ""),
+                                 source=moderation.ModerationSource.SITE,
+                                 allowed_from=(ModerationStatus.PENDING, ModerationStatus.APPROVED))
+        messages.warning(request, f"Оголошення «{prop.name}» відхилено.")
+    except moderation.ModerationError as exc:
+        messages.error(request, str(exc))
+    return redirect("properties:profile")
 
 @login_required(login_url="/auth/")
 def admin_update_audit_request(request, pk):
@@ -1109,6 +1163,7 @@ def payment(request, pk):
     Публікація та оплата розміщення оголошення (власник або адмін):
     - надіслати неопубліковане оголошення на модерацію;
     - оплатити розміщення (99 грн / 30 днів) або продовжити його через LiqPay;
+    - придбати просування: активна публікація, ТОП №3, ТОП №1 (діє лише після підтвердженої оплати);
     - історія платежів цього оголошення.
     """
     from .liqpay import payments_active
@@ -1122,11 +1177,9 @@ def payment(request, pk):
         messages.error(request, "Керувати можна лише своїм активним оголошенням.")
         return redirect("properties:property_detail", pk=pk)
     if request.method == "POST" and request.POST.get("action") == "free" and not prop.is_published:
-        # Публікація лише після перевірки адміністратором (модерація + фотоперевірка).
-        prop.is_published = True
-        prop.moderation_status = ModerationStatus.PENDING
-        prop.is_verified_by_admin = False
-        prop.save(update_fields=["is_published", "moderation_status", "is_verified_by_admin"])
+        # Публікація лише після перевірки модератором (спільний сервіс: черга, історія, Telegram).
+        from . import moderation
+        moderation.submit(prop.pk, actor=request.user, source=moderation.ModerationSource.OWNER)
         messages.success(
             request,
             "Оголошення надіслано на модерацію. Після перевірки адміністратором "
@@ -1140,12 +1193,21 @@ def payment(request, pk):
             "property": prop,
             "payments_enabled": payments_active(),
             "tariff": Tariff.placement(),
-            "property_payments": prop.payments.order_by("-created_at")[:20],
+            "property_payments": prop.payments.select_related("tariff").order_by("-created_at")[:20],
             "awaiting_activation": prop.payments.filter(
-                status="success", activated_at__isnull=True
+                status="success", activated_at__isnull=True, promotion_rank__isnull=True
             ).exists(),
             "can_pay": can_pay_for(request.user, prop),
             "open_payment": open_payment_for(prop),
+            "promotions": Tariff.promotions(),
+            # Оплата розміщення (99 грн / 30 днів) — лише якщо вона обов'язкова; інакше публікація безкоштовна.
+            "placement_offered": bool(settings.PLACEMENT_PAYMENT_REQUIRED),
+            "catalog_visible": is_catalog_visible(prop),
+            "current_promotion": active_promotions(Property.objects.filter(pk=prop.pk)).values(
+                "promo_rank", "promo_until").first(),
+            "pending_promotions": prop.payments.filter(
+                status="success", activated_at__isnull=True, promotion_rank__isnull=False
+            ).count(),
         },
     )
 
@@ -1170,7 +1232,10 @@ def request_audit(request, property_id=None):
         if request.user.email:
             initial_data["email"] = request.user.email
 
-    if request.method == "POST":
+    if request.method == "POST" and form_rate_limited(request, "audit_request"):
+        messages.error(request, "Забагато заявок з вашої мережі. Спробуйте пізніше.")
+        form = AuditRequestForm(request.POST)
+    elif request.method == "POST":
         form = AuditRequestForm(request.POST)
         if form.is_valid():
             audit_req = form.save(commit=False)
@@ -1179,6 +1244,7 @@ def request_audit(request, property_id=None):
             if request.user.is_authenticated:
                 audit_req.applicant = request.user
             audit_req.save()
+            count_form_submission(request, "audit_request")
             messages.success(
                 request,
                 "Дякуємо! Ваша заявка на аудит успішно відправлена. Наш спеціаліст зв'яжеться з вами найближчим часом.",
@@ -1204,6 +1270,9 @@ def submit_consultation_request(request):
     AJAX/JSON ендпоінт submit_consultation_request для обробки заявки на консалтинг.
     Валідація вхідних даних (телефон, обов'язкові поля, тип послуги) та збереження у базу.
     """
+    if form_rate_limited(request, "consultation"):
+        return JsonResponse({"success": False, "errors": {"_all_": "Забагато заявок. Спробуйте пізніше."}},
+                            status=429)
     if request.content_type == "application/json":
         try:
             data = json.loads(request.body)
@@ -1234,6 +1303,7 @@ def submit_consultation_request(request):
     if errors:
         return JsonResponse({"success": False, "errors": errors}, status=400)
 
+    count_form_submission(request, "consultation")
     consultation = ConsultationRequest.objects.create(
         name=name,
         phone=phone,
@@ -1329,7 +1399,7 @@ def quick_view_api(request, pk):
 def promote_listing(request, pk):
     """Стара система ТОП: продаж припинено. Маршрут залишено, щоб старі посилання не ламались."""
     get_object_or_404(Property, pk=pk)
-    messages.info(request, "Послуга «ТОП» більше не надається.")
+    messages.info(request, "Просування (ТОП, активна публікація) — на сторінці «Публікація та оплата» вашого оголошення.")
     return redirect("properties:property_detail", pk=pk)
 
 
@@ -1345,3 +1415,32 @@ def track_click(request, pk):
 
 
 
+
+
+def healthz(request):
+    """
+    Health check для балансувальника/моніторингу: застосунок відповідає і БД доступна.
+    Без деталей помилок і конфігурації. 200 — гаразд, 503 — БД недоступна.
+    """
+    from django.db import connection
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception:  # noqa: BLE001 — назовні лише статус
+        return JsonResponse({"status": "error"}, status=503)
+    return JsonResponse({"status": "ok"})
+
+
+class RateLimitedPasswordResetView(_auth_views.PasswordResetView):
+    """
+    Стандартне відновлення пароля Django з лімітом запитів на IP: кожен запит надсилає лист.
+    Понад ліміт — та сама сторінка «перевірте пошту» без відправлення (не розкриває, чи існує email).
+    """
+
+    def form_valid(self, form):
+        if form_rate_limited(self.request, "password_reset"):
+            return redirect(self.get_success_url())
+        count_form_submission(self.request, "password_reset")
+        return super().form_valid(form)

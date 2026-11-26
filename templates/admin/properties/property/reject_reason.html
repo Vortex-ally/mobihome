@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<form method="post">{% csrf_token %}
+  <p>Відхилити оголошення ({{ queryset|length }}):</p>
+  <ul>{% for p in queryset %}<li>#{{ p.pk }} — {{ p.name }} ({{ p.get_moderation_status_display }})</li>
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ p.pk }}">{% endfor %}</ul>
+  <p><label for="id_reason"><strong>Причина відхилення</strong> (її побачить власник; обов'язково):</label></p>
+  {% if error %}<p class="errornote">Вкажіть причину відхилення.</p>{% endif %}
+  <textarea id="id_reason" name="reason" rows="4" cols="70" required>{{ reason }}</textarea>
+  <input type="hidden" name="action" value="make_rejected">
+  <input type="hidden" name="post" value="yes">
+  <p><input type="submit" value="Відхилити"> <a href="" class="button cancel-link">Скасувати</a></p>
+</form>
+{% endblock %}

@@ -7,13 +7,20 @@
     <h1 class="h4 mb-3" style="color: var(--text);">Стан оплати</h1>
     <div class="card card-premium card-body">
         <p class="mb-2" style="color: var(--text);">Оголошення: <a href="{% url 'properties:property_detail' property.pk %}">{{ property.name }}</a></p>
+        <p class="mb-2" style="color: var(--text);">Послуга: <strong>{{ payment.tariff_name }}</strong></p>
         <p class="mb-2" style="color: var(--text);">Сума: <strong>{{ payment.amount|floatformat:"2g" }} {{ payment.currency }}</strong> · Замовлення <code>{{ payment.order_id }}</code></p>
         {% if payment.is_test %}<p class="mb-2"><span class="badge text-bg-warning">Тестовий режим</span></p>{% endif %}
 
         {% if payment.status == 'success' %}
             <div class="alert alert-success mb-0">
                 <strong>Оплату підтверджено LiqPay.</strong>
-                {% if payment.period_start %}
+                {% if payment.promotion_rank %}
+                    {% if payment.period_start %}
+                    Послуга «{{ payment.tariff_name }}» діє з {{ payment.period_start|date:"d.m.Y H:i" }} до {{ payment.period_end|date:"d.m.Y H:i" }}. Після завершення оголошення повернеться до звичайного показу.
+                    {% else %}
+                    Послуга «{{ payment.tariff_name }}» ({{ payment.duration_label }}) почнеться, щойно оголошення буде опубліковано в каталозі після модерації.
+                    {% endif %}
+                {% elif payment.period_start %}
                     Розміщення діє з {{ payment.period_start|date:"d.m.Y H:i" }} до {{ payment.period_end|date:"d.m.Y H:i" }}.
                 {% elif property.archived_at %}
                     Оголошення в архіві, тому розміщення не почалося. Зверніться до підтримки щодо цієї оплати.
@@ -48,6 +55,7 @@
                 <strong>Платіж не пройшов. Ви можете спробувати оплатити ще раз.</strong>
                 {% if can_retry %}
                 <form method="post" action="{% url 'properties:start_payment' property.pk %}" class="mt-3">{% csrf_token %}
+                    <input type="hidden" name="tariff" value="{{ payment.tariff.code }}">
                     <button type="submit" class="btn btn-success px-4 py-2">Спробувати ще раз</button>
                 </form>
                 {% else %}

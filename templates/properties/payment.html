@@ -16,19 +16,27 @@
 {% endif %}
 
 <div class="row g-4">
-    {% if not property.is_published %}
     <div class="col-lg-6">
         <div class="card card-premium card-body h-100">
-            <h2 class="h6 mb-2" style="color: var(--text);">Надіслати на модерацію</h2>
-            <p class="small text-muted mb-4">Адміністратор перевірить оголошення та фото. Після схвалення воно з'явиться в каталозі.</p>
+            <h2 class="h6 mb-2" style="color: var(--text);">Безкоштовна публікація</h2>
+            <p class="small text-muted mb-3"><strong style="color: var(--text);">0 грн</strong>. Звичайне розміщення: модератор перевірить оголошення та фото, після схвалення воно з'явиться в каталозі. Платні послуги нижче лише підвищують видимість — вони не замінюють модерацію і не дають позначки «Перевірене житло».</p>
+            {% if not property.is_published %}
             <form method="post" action="">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="free">
                 <button type="submit" class="btn btn-primary btn-lg px-4 py-2">Надіслати на модерацію</button>
             </form>
+            {% elif property.moderation_status == 'rejected' %}
+            <p class="small mb-0" style="color: var(--text);">Оголошення відхилено модератором. Відредагуйте його — після збереження воно знову потрапить на модерацію.</p>
+            {% elif catalog_visible %}
+            <p class="small mb-2" style="color: var(--text);">Оголошення опубліковано в каталозі.</p>
+            <a href="{% url 'properties:property_detail' property.pk %}" class="btn btn-outline-secondary btn-sm">Перейти до оголошення</a>
+            {% else %}
+            <p class="small mb-0" style="color: var(--text);">Оголошення на модерації. Після схвалення воно з'явиться в каталозі.</p>
+            {% endif %}
         </div>
     </div>
-    {% endif %}
+    {% if placement_offered or open_payment %}
     <div class="col-lg-6">
         <div class="card card-premium card-body h-100">
             {% if tariff %}
@@ -38,13 +46,14 @@
             <p class="small text-muted mb-0">Оплату розміщення здійснює лише власник оголошення.</p>
             {% elif payments_enabled and open_payment %}
             <div class="alert alert-warning small mb-3" role="status">
-                Є незавершена оплата від {{ open_payment.created_at|date:"d.m.Y H:i" }}
+                Є незавершена оплата «{{ open_payment.tariff_name }}» від {{ open_payment.created_at|date:"d.m.Y H:i" }}
                 ({{ open_payment.get_status_display|lower }}). Нову не створено, щоб уникнути подвійного списання.
             </div>
             <div class="d-flex flex-wrap gap-2">
                 {% if open_payment.status == 'created' %}
                 <form method="post" action="{% url 'properties:start_payment' property.pk %}">
                     {% csrf_token %}
+                    <input type="hidden" name="tariff" value="{{ open_payment.tariff.code }}">
                     <button type="submit" class="btn btn-success px-4 py-2">Продовжити оплату</button>
                 </form>
                 {% else %}
@@ -73,20 +82,55 @@
             {% endif %}
         </div>
     </div>
+    {% endif %}
 </div>
 
+{% if promotions %}
+<h2 class="h5 mt-5 mb-2" style="color: var(--text);">Просування в каталозі</h2>
+<p class="small text-muted mb-3">Платні послуги діють лише після підтвердження оплати LiqPay{% if not catalog_visible %} і починаються з моменту публікації оголошення після модерації{% endif %}. Після завершення терміну оголошення автоматично повертається до звичайного показу.</p>
+{% if current_promotion and current_promotion.promo_rank %}
+<div class="alert alert-success mb-3" role="status">Діє просування «{% if current_promotion.promo_rank == 1 %}ТОП №1{% elif current_promotion.promo_rank == 3 %}ТОП №3{% else %}Активна публікація{% endif %}» до <strong>{{ current_promotion.promo_until|date:"d.m.Y H:i" }}</strong>.</div>
+{% elif pending_promotions %}
+<div class="alert alert-info mb-3" role="status">Оплачене просування почнеться з моменту публікації оголошення.</div>
+{% endif %}
+<div class="row g-3 promotion-tariffs">
+    {% for t in promotions %}
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-premium card-body h-100 d-flex flex-column promotion-card{% if t.promotion_rank == 1 %} promotion-card--top1{% endif %}">
+            <h3 class="h6 mb-1" style="color: var(--text);">{{ t.name }}</h3>
+            <p class="mb-1"><strong class="fs-5" style="color: var(--text);">{{ t.price|floatformat:"0" }} грн</strong> <span class="small text-muted">/ {{ t.duration_label }}</span></p>
+            <p class="small text-muted flex-grow-1 mb-3">{{ t.description }}</p>
+            {% if payments_enabled and can_pay and not open_payment %}
+            <form method="post" action="{% url 'properties:start_payment' property.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="tariff" value="{{ t.code }}">
+                <button type="submit" class="btn {% if t.promotion_rank == 1 %}btn-success{% else %}btn-outline-success{% endif %} w-100">Оплатити {{ t.price|floatformat:"0" }} грн</button>
+            </form>
+            {% elif payments_enabled and open_payment %}
+            <p class="small text-muted mb-0">Спершу завершіть або скасуйте незавершену оплату.</p>
+            {% elif payments_enabled %}
+            <p class="small text-muted mb-0">Оплату здійснює лише власник оголошення.</p>
+            {% else %}
+            <p class="small text-muted mb-0">Онлайн-оплата буде доступна найближчим часом.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 {% if property_payments %}
 <h2 class="h6 mt-5 mb-3" style="color: var(--text);">Платежі за це оголошення</h2>
 <div class="table-responsive">
 <table class="table table-sm align-middle">
-    <thead><tr><th>Дата</th><th>Сума</th><th>Статус</th><th>Період</th></tr></thead>
+    <thead><tr><th>Дата</th><th>Послуга</th><th>Сума</th><th>Статус</th><th>Період</th></tr></thead>
     <tbody>
     {% for pay in property_payments %}
     <tr>
         <td class="text-nowrap">{{ pay.created_at|date:"d.m.Y H:i" }}</td>
+        <td>{{ pay.tariff_name }}</td>
         <td class="text-nowrap">{{ pay.amount|floatformat:"2g" }} {{ pay.currency }}</td>
         <td><a href="{% url 'properties:payment_result' pay.order_id %}">{{ pay.get_status_display }}</a>{% if pay.is_test %} <span class="badge text-bg-secondary">тест</span>{% endif %}{% if pay.needs_review %} <span class="badge text-bg-warning" title="Платіж перевіряє адміністратор">на перевірці</span>{% endif %}</td>
-        <td class="small text-nowrap">{% if pay.period_start %}{{ pay.period_start|date:"d.m.Y" }} – {{ pay.period_end|date:"d.m.Y" }}{% elif pay.status == 'success' %}після публікації{% else %}—{% endif %}</td>
+        <td class="small text-nowrap">{% if pay.period_start %}{% if pay.promotion_rank %}{{ pay.period_start|date:"d.m.Y H:i" }} – {{ pay.period_end|date:"d.m.Y H:i" }}{% else %}{{ pay.period_start|date:"d.m.Y" }} – {{ pay.period_end|date:"d.m.Y" }}{% endif %}{% elif pay.status == 'success' %}після публікації{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}
     </tbody>

@@ -1,6 +1,7 @@
 import hashlib
 import json
 
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import User
@@ -22,6 +23,9 @@ from .models import (
     AuditRequest,
     ConsultationRequest,
     Feature,
+    ListingVerification,
+    ModerationEvent,
+    ModerationQueue,
     ModerationStatus,
     ProfileReview,
     Property,
@@ -106,6 +110,27 @@ class ArchivedFilter(admin.SimpleListFilter):
         return queryset
 
 
+class PromotionFilter(admin.SimpleListFilter):
+    """Діюче платне просування (ТОП №1 / ТОП №3 / активна публікація) — за анотацією promo_rank."""
+
+    title = "Просування"
+    parameter_name = "promotion"
+
+    def lookups(self, request, model_admin):
+        return (("any", "Діє будь-яке"), *((str(rank), label) for rank, label in Tariff.PROMOTION_RANKS),
+                ("none", "Немає"))
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == "any":
+            return queryset.filter(promo_rank__isnull=False)
+        if value == "none":
+            return queryset.filter(promo_rank__isnull=True)
+        if value and value.isdigit():
+            return queryset.filter(promo_rank=int(value))
+        return queryset
+
+
 class PaymentInline(admin.TabularInline):
     """Платежі оголошення — лише перегляд."""
 
@@ -113,7 +138,7 @@ class PaymentInline(admin.TabularInline):
     extra = 0
     can_delete = False
     show_change_link = True
-    fields = ("order_id", "status", "amount", "currency", "paid_amount", "paid_at",
+    fields = ("order_id", "tariff_name", "status", "amount", "currency", "paid_amount", "paid_at",
               "activated_at", "period_start", "period_end", "provider_transaction_id")
     readonly_fields = fields
 
@@ -140,6 +165,7 @@ class PropertyAdmin(admin.ModelAdmin):
         "is_published",
         "is_verified_by_admin",
         "placement_status",
+        "promotion_status",
         "is_verified",
         "view_count",
         "created_at",
@@ -149,6 +175,7 @@ class PropertyAdmin(admin.ModelAdmin):
         "is_published",
         "is_verified_by_admin",
         PlacementStatusFilter,
+        PromotionFilter,
         ArchivedFilter,
         "is_verified",
         "listing_type",
@@ -161,7 +188,8 @@ class PropertyAdmin(admin.ModelAdmin):
     list_select_related = ("owner",)
     list_per_page = 50
     date_hierarchy = "created_at"
-    list_editable = ("moderation_status", "is_published", "is_verified_by_admin", "is_verified")
+    # Без list_editable: зміна статусу лише через сервіс модерації (причина, історія, захист від гонок).
+    form = None  # встановлюється нижче (PropertyAdminForm)
     filter_horizontal = ("features",)
     raw_id_fields = ("owner",)
     readonly_fields = ("placement_until", "is_featured", "featured_until", "archived_at",
@@ -186,7 +214,7 @@ class PropertyAdmin(admin.ModelAdmin):
         }),
         ("Службове", {"classes": ("collapse",), "fields": ("view_count", "created_at", "updated_at")}),
     )
-    inlines = [PropertyPhotoInline, AccessibilityAuditInline, PaymentInline]
+    inlines = [PropertyPhotoInline, AccessibilityAuditInline, None, None, PaymentInline]  # див. нижче
     actions = [
         "make_approved",
         "make_rejected",
@@ -198,6 +226,81 @@ class PropertyAdmin(admin.ModelAdmin):
         "archive_listings",
         "restore_listings",
     ]
+
+    def get_queryset(self, request):
+        from .placement import active_promotions
+
+        return active_promotions(super().get_queryset(request))
+
+    # --- Ролі: модератор (не суперкористувач) змінює ЛИШЕ поля модерації (серверне обмеження форми) ---
+
+    def get_fieldsets(self, request, obj=None):
+        if request.user.is_superuser:
+            return self.fieldsets + (("Модерація (службове)", {
+                "fields": ("moderation_internal_note", "expected_version", "moderation_version",
+                           "moderation_submitted_at")}),)
+        return (
+            ("Оголошення (лише перегляд)", {"fields": (
+                "name", "owner", "listing_type", "price", "city", "address", ("rooms", "area_sqm"),
+                ("floor", "total_floors"), "description", "photo", "features", "contact_phone",
+                "is_published", "placement_until", "created_at")}),
+            ("Модерація", {"fields": (
+                "moderation_status", "moderation_note", "moderation_internal_note", "mobility_level",
+                "is_verified_by_admin", "is_verified", "expected_version", "moderation_version",
+                "moderation_submitted_at")}),
+        )
+
+    def get_readonly_fields(self, request, obj=None):
+        base = tuple(self.readonly_fields) + ("moderation_version", "moderation_submitted_at")
+        if request.user.is_superuser:
+            return base
+        editable = set(MODERATOR_EDITABLE_FIELDS) | {"expected_version"}
+        names = {f.name for f in self.model._meta.get_fields() if getattr(f, "concrete", False)}
+        names |= {f.name for f in self.model._meta.many_to_many}
+        return tuple(sorted(set(base) | (names - editable)))
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            actions = {k: v for k, v in actions.items() if k in ("make_approved", "make_rejected")}
+        return actions
+
+    def get_inline_instances(self, request, obj=None):
+        return [i for i in super().get_inline_instances(request, obj) if i is not None]
+
+    def save_model(self, request, obj, form, change):
+        from . import moderation
+
+        new_status = obj.moderation_status
+        old_status = form.initial.get("moderation_status") if change else None
+        if not change or "moderation_status" not in form.changed_data:
+            return super().save_model(request, obj, form, change)
+        obj.moderation_status = old_status  # статус змінює лише сервіс
+        super().save_model(request, obj, form, change)
+        version = form.cleaned_data.get("expected_version")
+        try:
+            if new_status == ModerationStatus.APPROVED:
+                moderation.approve(obj.pk, actor=request.user, source=moderation.ModerationSource.ADMIN,
+                                   expected_version=version,
+                                   allowed_from=(ModerationStatus.PENDING, ModerationStatus.REJECTED))
+            elif new_status == ModerationStatus.REJECTED:
+                moderation.reject(obj.pk, actor=request.user, reason=obj.moderation_note,
+                                  source=moderation.ModerationSource.ADMIN, expected_version=version,
+                                  allowed_from=(ModerationStatus.PENDING, ModerationStatus.APPROVED))
+            elif new_status == ModerationStatus.PENDING:
+                if not moderation.can_moderate(request.user):
+                    raise moderation.ModerationError("Немає прав на модерацію.")
+                moderation.submit(obj.pk, actor=request.user, source=moderation.ModerationSource.ADMIN)
+        except moderation.ModerationError as exc:
+            self.message_user(request, f"Статус модерації не змінено: {exc}", messages.ERROR)
+        obj.refresh_from_db()
+
+    @admin.display(description="Просування", ordering="promo_rank")
+    def promotion_status(self, obj):
+        rank = getattr(obj, "promo_rank", None)
+        if not rank:
+            return "—"
+        return f"{dict(Tariff.PROMOTION_RANKS).get(rank, rank)} до {timezone.localtime(obj.promo_until):%d.%m.%Y %H:%M}"
 
     @admin.display(description="Розміщення")
     def placement_status(self, obj):
@@ -226,21 +329,51 @@ class PropertyAdmin(admin.ModelAdmin):
         updated = queryset.update(is_verified_by_admin=False, verified_at=None)
         self.message_user(request, f"Скасовано фотомодерацію для {updated} оголошень.")
 
-    @admin.action(description="Схвалити та опублікувати (з фотоперевіркою)")
+    @admin.action(description="Схвалити та опублікувати (з фотоперевіркою)", permissions=["moderate"])
     def make_approved(self, request, queryset):
-        updated = queryset.filter(archived_at__isnull=True).update(
-            moderation_status=ModerationStatus.APPROVED,
-            is_published=True,
-            is_verified_by_admin=True,
-            verified_at=timezone.now(),
-        )
-        self._activate_paid(queryset)
-        self.message_user(request, f"Схвалено та опубліковано {updated} оголошень.")
+        from . import moderation
 
-    @admin.action(description="Відхилити")
+        done, errors = 0, []
+        for prop in queryset.filter(archived_at__isnull=True):
+            try:
+                moderation.approve(prop.pk, actor=request.user, source=moderation.ModerationSource.ADMIN,
+                                   allowed_from=(ModerationStatus.PENDING, ModerationStatus.REJECTED))
+                done += 1
+            except moderation.ModerationError as exc:
+                errors.append(f"#{prop.pk}: {exc}")
+        self.message_user(request, f"Схвалено та опубліковано {done} оголошень.")
+        for err in errors[:10]:
+            self.message_user(request, err, messages.WARNING)
+
+    @admin.action(description="Відхилити (з причиною)", permissions=["moderate"])
     def make_rejected(self, request, queryset):
-        updated = queryset.update(moderation_status=ModerationStatus.REJECTED)
-        self.message_user(request, f"Відхилено {updated} оголошень.")
+        from . import moderation
+
+        reason = (request.POST.get("reason") or "").strip()
+        if request.POST.get("post") != "yes" or not reason:
+            return TemplateResponse(request, "admin/properties/property/reject_reason.html", {
+                **self.admin_site.each_context(request), "title": "Причина відхилення",
+                "opts": self.model._meta, "queryset": queryset, "reason": reason,
+                "error": request.POST.get("post") == "yes" and not reason,
+                "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+            })
+        done, errors = 0, []
+        for prop in queryset:
+            try:
+                moderation.reject(prop.pk, actor=request.user, reason=reason, source=moderation.ModerationSource.ADMIN,
+                                  allowed_from=(ModerationStatus.PENDING, ModerationStatus.APPROVED))
+                done += 1
+            except moderation.ModerationError as exc:
+                errors.append(f"#{prop.pk}: {exc}")
+        self.message_user(request, f"Відхилено {done} оголошень.")
+        for err in errors[:10]:
+            self.message_user(request, err, messages.WARNING)
+        return None
+
+    def has_moderate_permission(self, request):
+        from .moderation import can_moderate
+
+        return can_moderate(request.user)
 
     @admin.action(description="Позначити як перевірене житло (Verified)")
     def make_verified(self, request, queryset):
@@ -404,8 +537,9 @@ admin.site.login = _throttled_admin_login
 
 @admin.register(Tariff)
 class TariffAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "price", "currency", "duration_days", "is_active", "updated_at")
-    list_filter = ("is_active",)
+    list_display = ("name", "code", "price", "currency", "duration_days", "duration_hours", "promotion_rank",
+                    "is_active", "updated_at")
+    list_filter = ("is_active", "promotion_rank")
     search_fields = ("name", "code")
     readonly_fields = ("created_at", "updated_at")
 
@@ -501,10 +635,12 @@ def _close_review(request, model_admin, payment_pk, seen_alert_id):
 class PaymentAdmin(admin.ModelAdmin):
     """Фінансові записи: лише перегляд. Статус змінюється тільки підтвердженням провайдера."""
 
-    list_display = ("order_id", "status", "needs_review", "is_test", "property_link", "user_display", "amount",
+    list_display = ("order_id", "tariff_name", "status", "needs_review", "is_test", "property_link", "user_display",
+                    "amount",
                     "currency", "paid_amount", "provider_transaction_id", "paid_at", "period_end", "created_at",
                     "updated_at")
-    list_filter = ("needs_review", "status", "is_test", "provider", "currency", "created_at", "paid_at")
+    list_filter = ("needs_review", "status", "tariff", "promotion_rank", "is_test", "provider", "currency",
+                   "created_at", "paid_at", "period_end")
     search_fields = ("order_id", "provider_transaction_id", "user__username", "user__email",
                      "user_snapshot", "property__name", "=property__id")
     list_select_related = ("property", "user", "tariff")
@@ -694,3 +830,167 @@ class PlacementTransitionAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+admin.site.site_header = "mobi Home — адміністрування"
+admin.site.site_title = "mobi Home"
+admin.site.index_title = "Керування сайтом"
+
+
+# --- Модерація: форма оголошення, перевірки житла, історія, черга ---
+
+MODERATOR_EDITABLE_FIELDS = ("moderation_status", "moderation_note", "moderation_internal_note", "mobility_level",
+                             "is_verified_by_admin", "is_verified")
+
+
+class PropertyAdminForm(forms.ModelForm):
+    expected_version = forms.IntegerField(widget=forms.HiddenInput, required=False)
+
+    class Meta:
+        model = Property
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields["expected_version"].initial = self.instance.moderation_version
+
+    def clean(self):
+        cleaned = super().clean()
+        if not (self.instance and self.instance.pk):
+            return cleaned
+        current = Property.objects.filter(pk=self.instance.pk).values(
+            "moderation_version", "moderation_status").first()
+        if "moderation_status" in self.changed_data:
+            if cleaned.get("expected_version") is not None and current \
+                    and cleaned["expected_version"] != current["moderation_version"]:
+                raise forms.ValidationError("Оголошення вже змінив інший модератор. Оновіть сторінку.")
+            if cleaned.get("moderation_status") == ModerationStatus.REJECTED \
+                    and not (cleaned.get("moderation_note") or "").strip():
+                self.add_error("moderation_note", "Вкажіть причину відхилення — її побачить власник.")
+        if cleaned.get("is_verified") and "is_verified" in self.changed_data and not \
+                ListingVerification.objects.filter(property_id=self.instance.pk, result="passed").exists():
+            self.add_error("is_verified", "«Перевірене житло» — лише після пройденої перевірки (онлайн або виїзної).")
+        return cleaned
+
+
+PropertyAdmin.form = PropertyAdminForm
+
+
+class ListingVerificationInline(admin.StackedInline):
+    model = ListingVerification
+    extra = 0
+    fields = (("kind", "result", "checked_on"), ("photos_checked", "video_checked", "owner_contacted"), "video_link",
+              ("inspector", "inspector_name"), "checklist", "report", ("inspector_fee", "payout_status"),
+              "internal_comment", "recorded_by")
+    readonly_fields = ("recorded_by",)
+    raw_id_fields = ("inspector",)
+
+
+class ModerationEventInline(admin.TabularInline):
+    model = ModerationEvent
+    extra = 0
+    can_delete = False
+    fields = ("created_at", "action", "from_status", "to_status", "actor_snapshot", "source", "reason")
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+PropertyAdmin.inlines = [PropertyPhotoInline, AccessibilityAuditInline, ListingVerificationInline,
+                         ModerationEventInline, PaymentInline]
+
+
+def _save_verification_formset(self, request, form, formset, change):
+    instances = formset.save(commit=False)
+    for inst in instances:
+        if isinstance(inst, ListingVerification) and not inst.recorded_by_id:
+            inst.recorded_by = request.user
+        inst.save()
+    for inst in formset.deleted_objects:
+        inst.delete()
+    formset.save_m2m()
+
+
+PropertyAdmin.save_formset = _save_verification_formset
+
+
+class VerificationKindFilter(admin.SimpleListFilter):
+    title = "Формат перевірки"
+    parameter_name = "verification"
+
+    def lookups(self, request, model_admin):
+        return (("online", "Онлайн"), ("onsite", "Виїзна"), ("none", "Ще не перевірялось"))
+
+    def queryset(self, request, queryset):
+        if self.value() in ("online", "onsite"):
+            return queryset.filter(verifications__kind=self.value()).distinct()
+        if self.value() == "none":
+            return queryset.filter(verifications__isnull=True)
+        return queryset
+
+
+PropertyAdmin.list_filter = (*PropertyAdmin.list_filter, VerificationKindFilter)
+
+
+@admin.register(ModerationQueue)
+class ModerationQueueAdmin(PropertyAdmin):
+    """Черга нових і повторних заявок: лише «На перевірці», найстаріші — першими."""
+
+    list_display = ("id", "name", "city", "owner", "moderation_submitted_at", "moderation_version",
+                    "verification_kinds", "is_verified")
+    list_display_links = ("id", "name")
+    list_filter = ("moderation_submitted_at", "created_at", VerificationKindFilter, "city")
+    ordering = ("moderation_submitted_at", "pk")
+    date_hierarchy = None
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(moderation_status=ModerationStatus.PENDING,
+                                                    archived_at__isnull=True)
+
+    @admin.display(description="Перевірки")
+    def verification_kinds(self, obj):
+        kinds = sorted({v.get_kind_display() + ": " + v.get_result_display() for v in obj.verifications.all()})
+        return "; ".join(kinds) or "—"
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(ModerationEvent)
+class ModerationEventAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "property", "action", "from_status", "to_status", "actor_snapshot", "source")
+    list_filter = ("action", "source", "to_status", "created_at")
+    search_fields = ("=property__id", "property__name", "actor_snapshot", "reason")
+    list_select_related = ("property",)
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ListingVerification)
+class ListingVerificationAdmin(admin.ModelAdmin):
+    list_display = ("property", "kind", "result", "checked_on", "inspector_name", "inspector_fee", "payout_status",
+                    "recorded_by", "created_at")
+    list_filter = ("kind", "result", "payout_status", "checked_on")
+    search_fields = ("=property__id", "property__name", "inspector_name")
+    raw_id_fields = ("property", "inspector")
+    readonly_fields = ("recorded_by", "created_at", "updated_at")
+
+    def save_model(self, request, obj, form, change):
+        if not obj.recorded_by_id:
+            obj.recorded_by = request.user
+        super().save_model(request, obj, form, change)

@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}Профіль — mobi home{% endblock %}
+{% block title %}Профіль — mobi Home{% endblock %}
 
 {% block content %}
 <div class="wrap profile-page">
@@ -43,46 +43,34 @@
         </div>
 </div>
 
-<!-- Author Live Analytics Dashboard (Кабінет автора: Статистика у реальному часі) -->
+<!-- Статистика власника: лише реальні дані з бази (без вигаданих трендів). -->
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
-        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-                <span class="text-muted small">Перегляди (30 дн.)</span>
-                <span class="fs-5">👁</span>
-            </div>
-            <div class="h3 fw-bold text-info mb-0">1,420</div>
-            <div class="small text-success mt-1">↑ +18% цього тижня</div>
+        <div class="card card-premium p-3 h-100">
+            <div class="small text-muted mb-1">Перегляди</div>
+            <div class="h3 fw-bold mb-0" style="color: var(--text);">{{ owner_stats.views }}</div>
+            <div class="small text-muted mt-1">усього за всіма оголошеннями</div>
         </div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-                <span class="text-muted small">Кліків «Телефон»</span>
-                <span class="fs-5">📞</span>
-            </div>
-            <div class="h3 fw-bold text-success mb-0">84</div>
-            <div class="small text-success mt-1">↑ +12 дзвонів</div>
+        <div class="card card-premium p-3 h-100">
+            <div class="small text-muted mb-1">В обраному</div>
+            <div class="h3 fw-bold mb-0" style="color: var(--text);">{{ owner_stats.favorites }}</div>
+            <div class="small text-muted mt-1">додавань ваших оголошень</div>
         </div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-                <span class="text-muted small">В обраному</span>
-                <span class="fs-5">❤️</span>
-            </div>
-            <div class="h3 fw-bold text-warning mb-0">36</div>
-            <div class="small text-muted mt-1">Збережено покупцями</div>
+        <div class="card card-premium p-3 h-100">
+            <div class="small text-muted mb-1">Опубліковано</div>
+            <div class="h3 fw-bold mb-0" style="color: var(--text);">{{ owner_stats.published }}</div>
+            <div class="small text-muted mt-1">показуються в каталозі</div>
         </div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="card p-3 border-0 shadow-sm rounded-4 text-white" style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(255,255,255,0.1) !important;">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-                <span class="text-muted small">Конверсія</span>
-                <span class="fs-5">⚡</span>
-            </div>
-            <div class="h3 fw-bold text-teal mb-0" style="color: #0d9488;">5.9%</div>
-            <div class="small text-success mt-1">Висока активність</div>
+        <div class="card card-premium p-3 h-100">
+            <div class="small text-muted mb-1">На перевірці</div>
+            <div class="h3 fw-bold mb-0" style="color: var(--text);">{{ owner_stats.pending }}</div>
+            <div class="small text-muted mt-1">очікують модерації</div>
         </div>
     </div>
 </div>
@@ -95,15 +83,15 @@
                 <form method="post" action="">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <label class="form-label small">Ім'я</label>
+                        <label class="form-label small" for="{{ form.first_name.id_for_label }}">Ім'я</label>
                         {{ form.first_name }}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small">Прізвище</label>
+                        <label class="form-label small" for="{{ form.last_name.id_for_label }}">Прізвище</label>
                         {{ form.last_name }}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small">Email</label>
+                        <label class="form-label small" for="{{ form.email.id_for_label }}">Email</label>
                         {{ form.email }}
                     </div>
                     <button type="submit" class="btn btn-primary w-100 mt-2">Зберегти зміни</button>
@@ -150,7 +138,7 @@
                 </div>
             </div>
             <a href="{% url 'admin:index' %}" class="btn btn-outline-warning btn-sm px-3 rounded-3 fw-bold" target="_blank">
-                Відкрити Django Admin ↗
+                Відкрити адмін-панель ↗
             </a>
         </div>
 
@@ -159,7 +147,7 @@
             <div class="admin-section mb-5">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <h3 class="h6 font-weight-bold mb-0 d-flex align-items-center gap-2" style="color: var(--text);">
-                        <span>⏳</span> Оголошення на перевірці (Pending Moderation)
+                        <span>⏳</span> Оголошення на перевірці
                         {% if pending_properties %}
                         <span class="badge bg-warning text-dark rounded-pill">{{ pending_properties|length }}</span>
                         {% endif %}
@@ -363,7 +351,7 @@
                                         <div class="col-6 col-sm-4">
                                             <label class="form-label small mb-1">Рівень доступності</label>
                                             <select name="mobility_level" class="form-select form-select-sm rounded-2">
-                                                <option value="">-- Не обрано --</option>
+                                                <option value="">— Не обрано —</option>
                                                 <option value="1" {% if req.property and req.property.mobility_level == "1" %}selected{% endif %}>1 (Повна)</option>
                                                 <option value="2" {% if req.property and req.property.mobility_level == "2" %}selected{% endif %}>2 (Висока)</option>
                                                 <option value="3" {% if req.property and req.property.mobility_level == "3" %}selected{% endif %}>3 (Середня)</option>
@@ -372,7 +360,7 @@
                                             </select>
                                         </div>
                                         <div class="col-6 col-sm-4">
-                                            <label class="form-label small mb-1">Бал (0 - 10)</label>
+                                            <label class="form-label small mb-1">Бал (0–10)</label>
                                             <input type="number" step="0.1" min="0" max="10" name="total_score" class="form-control form-control-sm rounded-2" placeholder="напр. 8.5" value="{% if req.property and req.property.accessibility_audit %}{{ req.property.accessibility_audit.total_score|floatformat:1 }}{% endif %}">
                                         </div>
                                         <div class="col-12 text-end mt-2">
@@ -416,6 +404,7 @@
                         <span class="badge profile-badge" style="background: rgba(245, 158, 11, 0.2); color: #d97706;">⏳ На модерації</span>
                     {% elif prop.moderation_status == 'rejected' %}
                         <span class="badge profile-badge bg-danger text-white">🔴 Відхилено</span>
+                        {% if prop.moderation_note %}<div class="small mt-2 profile-reject-reason" style="color: var(--text);"><strong>Причина:</strong> {{ prop.moderation_note }}<br><span class="text-muted">Відредагуйте оголошення — після збереження воно знову піде на перевірку.</span></div>{% endif %}
                     {% else %}
                         <span class="badge profile-badge profile-badge--draft">Чернетка</span>
                     {% endif %}
@@ -448,13 +437,14 @@
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0 profile-payments-table">
                 <thead>
-                    <tr><th>Дата</th><th>Оголошення</th><th>Сума</th><th>Статус</th><th>Період</th></tr>
+                    <tr><th>Дата</th><th>Оголошення</th><th>Послуга</th><th>Сума</th><th>Статус</th><th>Період</th></tr>
                 </thead>
                 <tbody>
                 {% for pay in user_payments %}
                     <tr>
                         <td class="text-nowrap">{{ pay.created_at|date:"d.m.Y H:i" }}<div class="small text-muted" title="Номер замовлення">{{ pay.order_id }}</div></td>
                         <td><a href="{% url 'properties:property_detail' pay.property_id %}">{{ pay.property.name|truncatechars:40 }}</a></td>
+                        <td class="small">{{ pay.tariff_name }}</td>
                         <td class="text-nowrap">{{ pay.amount|floatformat:"2g" }} {{ pay.currency }}</td>
                         <td>
                             <a href="{% url 'properties:payment_result' pay.order_id %}" class="badge profile-badge payment-status payment-status--{{ pay.status }}">{{ pay.get_status_display }}</a>
@@ -462,7 +452,7 @@
                             {% if pay.needs_review %}<span class="badge text-bg-warning ms-1" title="Платіж перевіряє адміністратор">на перевірці</span>{% endif %}
                         </td>
                         <td class="text-nowrap small">
-                            {% if pay.period_start %}{{ pay.period_start|date:"d.m.Y" }} – {{ pay.period_end|date:"d.m.Y" }}
+                            {% if pay.period_start %}{% if pay.promotion_rank %}{{ pay.period_start|date:"d.m.Y H:i" }} – {{ pay.period_end|date:"d.m.Y H:i" }}{% else %}{{ pay.period_start|date:"d.m.Y" }} – {{ pay.period_end|date:"d.m.Y" }}{% endif %}
                             {% elif pay.status == 'success' %}Почнеться після публікації
                             {% else %}—{% endif %}
                         </td>

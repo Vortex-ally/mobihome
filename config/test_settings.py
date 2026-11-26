@@ -13,6 +13,9 @@ from .settings import *  # noqa: E402,F401,F403
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 MEDIA_ROOT = tempfile.mkdtemp(prefix="mobihome-test-media-")
+PRIVATE_MEDIA_ROOT = tempfile.mkdtemp(prefix="mobihome-test-private-")
+TELEGRAM_BOT_ENABLED = False
+TELEGRAM_MODERATION_CHAT_ID = ""
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 GOOGLE_CLIENT_ID = ""

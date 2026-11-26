@@ -2,6 +2,7 @@
 Моделі платформи «Доступний Дім».
 """
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -152,10 +153,19 @@ class Property(models.Model):
         help_text="Перевірка оголошення та фотографій житла на доступність/мобільність адміністратором.",
     )
     moderation_note = models.TextField(
-        "Коментар модератора",
+        "Причина відхилення / зауваження для власника",
         blank=True,
-        help_text="Зауваження або причина відхилення оголошення",
+        help_text="Бачить власник оголошення. Обов'язкова при відхиленні.",
     )
+    moderation_internal_note = models.TextField(
+        "Внутрішній коментар модератора", blank=True,
+        help_text="Лише для модераторів і адміністраторів; власнику й відвідувачам не показується.",
+    )
+    moderation_version = models.PositiveIntegerField(
+        "Версія заявки на модерацію", default=0,
+        help_text="Збільшується при кожному поданні й рішенні: застарілі кнопки (напр. у Telegram) не спрацьовують.",
+    )
+    moderation_submitted_at = models.DateTimeField("Подано на модерацію", null=True, blank=True, db_index=True)
     is_verified_by_admin = models.BooleanField(
         "Фото перевірено адміном",
         default=False,
@@ -216,6 +226,7 @@ class Property(models.Model):
         verbose_name = "Об'єкт нерухомості"
         verbose_name_plural = "Об'єкти нерухомості"
         ordering = ["-created_at"]
+        permissions = [("moderate_property", "Може модерувати оголошення (схвалення, відхилення, перевірка)")]
         indexes = [
             models.Index(
                 fields=["is_published", "moderation_status", "is_verified_by_admin"],
@@ -745,6 +756,21 @@ class AuthSession(models.Model):
 # ---------------------------------------------------------------------------
 
 
+def duration_label(hours, days):
+    """«12 годин», «24 години», «5 днів», «30 днів» — для інтерфейсу."""
+    if hours:
+        n, forms = hours, ("година", "години", "годин")
+    else:
+        n, forms = days, ("день", "дні", "днів")
+    if n % 10 == 1 and n % 100 != 11:
+        word = forms[0]
+    elif 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        word = forms[1]
+    else:
+        word = forms[2]
+    return f"{n} {word}"
+
+
 class Tariff(models.Model):
     """
     Тариф платного розміщення. Змінювати ціну/термін можна в адмінці: платежі зберігають
@@ -752,9 +778,25 @@ class Tariff(models.Model):
     """
 
     PLACEMENT_CODE = "placement"
+    # Ранги просування в каталозі: менший — вище. NULL — тариф розміщення (не просування).
+    RANK_TOP1 = 1
+    RANK_TOP3 = 3
+    RANK_BEST = 4
+    RANK_ACTIVE = 5
+    PROMOTION_RANKS = ((RANK_TOP1, "ТОП №1"), (RANK_TOP3, "ТОП №3"), (RANK_BEST, "Блок найкращих оголошень"),
+                       (RANK_ACTIVE, "Активна публікація"))
 
     code = models.SlugField("Код", max_length=50, unique=True)
     name = models.CharField("Назва", max_length=150)
+    description = models.CharField("Опис для користувача", max_length=255, blank=True)
+    promotion_rank = models.PositiveSmallIntegerField(
+        "Ранг просування", choices=PROMOTION_RANKS, null=True, blank=True,
+        help_text="Порожньо — тариф розміщення. 1 — ТОП №1, 3 — ТОП №3, 4 — блок найкращих, 5 — активна публікація.",
+    )
+    duration_hours = models.PositiveIntegerField(
+        "Термін (годин)", null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(24 * 366)],
+        help_text="Для коротких послуг (напр. 12 або 24 години). Якщо задано — має пріоритет над днями.",
+    )
     price = models.DecimalField(
         "Ціна", max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))]
     )
@@ -778,12 +820,27 @@ class Tariff(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.name} — {self.price} {self.currency} / {self.duration_days} дн."
+        return f"{self.name} — {self.price} {self.currency} / {self.duration_label()}"
+
+    # Методи, а не @property — так само, як у Payment (там поле `property` перекриває декоратор).
+    def is_promotion(self):
+        return self.promotion_rank is not None
+
+    def duration(self):
+        return timedelta(hours=self.duration_hours) if self.duration_hours else timedelta(days=self.duration_days)
+
+    def duration_label(self):
+        return duration_label(self.duration_hours, self.duration_days)
 
     @classmethod
     def placement(cls):
         """Активний тариф «Розміщення квартири» або None."""
         return cls.objects.filter(code=cls.PLACEMENT_CODE, is_active=True).first()
+
+    @classmethod
+    def promotions(cls):
+        """Активні тарифи просування: ТОП №1 вище, далі ТОП №3, активна публікація."""
+        return cls.objects.filter(is_active=True, promotion_rank__isnull=False).order_by("promotion_rank", "-price")
 
 
 class PaymentStatus(models.TextChoices):
@@ -853,6 +910,11 @@ class Payment(models.Model):
     amount = models.DecimalField("Сума до оплати", max_digits=10, decimal_places=2)
     currency = models.CharField("Валюта", max_length=3, default="UAH")
     duration_days = models.PositiveSmallIntegerField("Термін (днів, знімок)")
+    duration_hours = models.PositiveIntegerField("Термін (годин, знімок)", null=True, blank=True)
+    promotion_rank = models.PositiveSmallIntegerField(
+        "Ранг просування (знімок)", choices=Tariff.PROMOTION_RANKS, null=True, blank=True,
+        help_text="Порожньо — оплата розміщення; інакше — просування в каталозі на період period_start…period_end.",
+    )
     # Дані підтвердженої оплати (з callback провайдера)
     paid_amount = models.DecimalField(
         "Фактично сплачено", max_digits=10, decimal_places=2, null=True, blank=True
@@ -884,6 +946,8 @@ class Payment(models.Model):
         indexes = [
             models.Index(fields=["property", "status"], name="payment_property_status_idx"),
             models.Index(fields=["user", "created_at"], name="payment_user_created_idx"),
+            # Активне просування в каталозі: успішний платіж з рангом, період діє зараз.
+            models.Index(fields=["property", "promotion_rank", "period_end"], name="payment_promotion_idx"),
         ]
         constraints = [
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="payment_amount_positive"),
@@ -907,6 +971,17 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.order_id} — {self.amount} {self.currency} ({self.get_status_display()})"
+
+    # Звичайні методи (не @property: поле `property` цього класу перекриває вбудований декоратор).
+    # Шаблони Django викликають їх автоматично: {{ payment.duration_label }}.
+    def is_promotion(self):
+        return self.promotion_rank is not None
+
+    def duration(self):
+        return timedelta(hours=self.duration_hours) if self.duration_hours else timedelta(days=self.duration_days)
+
+    def duration_label(self):
+        return duration_label(self.duration_hours, self.duration_days)
 
     def is_final(self):
         # Звичайний метод: ім'я поля `property` у цьому класі перекриває декоратор @property.
@@ -975,3 +1050,164 @@ class PlacementTransition(models.Model):
 
     def __str__(self):
         return f"Перехідний період до {self.ends_at:%d.%m.%Y} ({self.listings_count} оголошень)"
+
+
+
+# --- Модерація та перевірка житла ---
+
+
+class ModerationSource(models.TextChoices):
+    OWNER = "owner", "Власник (сайт)"
+    SITE = "site", "Кабінет персоналу (сайт)"
+    ADMIN = "admin", "Django Admin"
+    TELEGRAM = "telegram", "Telegram"
+    SYSTEM = "system", "Система"
+
+
+class ModerationAction(models.TextChoices):
+    SUBMITTED = "submitted", "Подано на модерацію"
+    APPROVED = "approved", "Схвалено"
+    REJECTED = "rejected", "Відхилено"
+
+
+class ModerationEvent(models.Model):
+    """Історія модерації: хто, коли, з якого статусу в який, причина, джерело. Лише додавання."""
+
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="moderation_events",
+                                 verbose_name="Оголошення")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name="+", verbose_name="Хто")
+    actor_snapshot = models.CharField("Хто (знімок)", max_length=150, blank=True)
+    action = models.CharField("Дія", max_length=20, choices=ModerationAction.choices)
+    source = models.CharField("Джерело", max_length=20, choices=ModerationSource.choices)
+    from_status = models.CharField("Попередній статус", max_length=20, choices=ModerationStatus.choices, blank=True)
+    to_status = models.CharField("Новий статус", max_length=20, choices=ModerationStatus.choices)
+    reason = models.TextField("Причина / коментар", blank=True)
+    version = models.PositiveIntegerField("Версія заявки", default=0)
+    created_at = models.DateTimeField("Коли", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Подія модерації"
+        verbose_name_plural = "Історія модерації"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"#{self.property_id}: {self.get_action_display()} ({self.get_source_display()})"
+
+
+class ModerationQueue(Property):
+    """Проксі для окремого розділу адмінки «Черга модерації» (лише оголошення на перевірці)."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Заявка на модерацію"
+        verbose_name_plural = "Черга модерації"
+
+
+def _private_storage():
+    from .private_files import PrivateReportStorage
+
+    # Поза MEDIA_ROOT: nginx/WhiteNoise ці файли не роздають; доступ — лише через адмінку з перевіркою прав.
+    return PrivateReportStorage()
+
+
+class VerificationKind(models.TextChoices):
+    ONLINE = "online", "Онлайн-перевірка"
+    ONSITE = "onsite", "Виїзна перевірка"
+
+
+class VerificationResult(models.TextChoices):
+    PENDING = "pending", "В процесі"
+    PASSED = "passed", "Пройдено"
+    FAILED = "failed", "Не пройдено"
+
+
+class PayoutStatus(models.TextChoices):
+    NOT_APPLICABLE = "n/a", "Не застосовується"
+    PENDING = "pending", "Очікує виплати"
+    PAID = "paid", "Виплачено"
+
+
+class ListingVerification(models.Model):
+    """
+    Перевірка житла модератором (онлайн) або інспектором (виїзна). Внутрішній документ: звіти, посилання
+    на відео й коментарі не публікуються. Позначка «Перевірене житло» (Property.is_verified) можлива
+    лише за наявності пройденої перевірки. Виплати інспекторам лише фіксуються — переказів система не робить.
+    """
+
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="verifications",
+                                 verbose_name="Оголошення")
+    kind = models.CharField("Формат перевірки", max_length=10, choices=VerificationKind.choices)
+    result = models.CharField("Результат", max_length=10, choices=VerificationResult.choices,
+                              default=VerificationResult.PENDING)
+    checked_on = models.DateField("Дата перевірки", null=True, blank=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="+", verbose_name="Зафіксував")
+    # Онлайн
+    photos_checked = models.BooleanField("Фотографії перевірено", default=False)
+    video_checked = models.BooleanField("Відеозвіт перевірено", default=False)
+    video_link = models.URLField("Посилання на відеозвіт (внутрішнє)", blank=True)
+    owner_contacted = models.BooleanField("Зв'язок із власником", default=False)
+    # Виїзна
+    inspector = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name="+", verbose_name="Інспектор (акаунт)")
+    inspector_name = models.CharField("Інспектор (ПІБ)", max_length=150, blank=True)
+    checklist = models.TextField("Чек-лист доступності", blank=True,
+                                 help_text="Результати замірів; детальний аудит — у розділі «Аудити доступності».")
+    report = models.FileField("Звіт / фото (приватно)", upload_to="verification_reports/%Y/%m/",
+                              storage=_private_storage, blank=True)
+    inspector_fee = models.DecimalField("Винагорода інспектору, грн", max_digits=10, decimal_places=2,
+                                        null=True, blank=True, validators=[MinValueValidator(0)])
+    payout_status = models.CharField("Статус виплати", max_length=10, choices=PayoutStatus.choices,
+                                     default=PayoutStatus.NOT_APPLICABLE)
+    internal_comment = models.TextField("Внутрішній коментар", blank=True)
+    created_at = models.DateTimeField("Створено", auto_now_add=True)
+    updated_at = models.DateTimeField("Оновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Перевірка житла"
+        verbose_name_plural = "Перевірки житла"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"#{self.property_id}: {self.get_kind_display()} — {self.get_result_display()}"
+
+
+class TelegramModerationMessage(models.Model):
+    """
+    Повідомлення про заявку в робочому Telegram-чаті модераторів. Одне на (оголошення, версію) —
+    повторне надсилання не дублює. failed — буде повторено ботом.
+    """
+
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="telegram_messages")
+    version = models.PositiveIntegerField()
+    chat_id = models.CharField(max_length=32)
+    message_id = models.BigIntegerField(null=True, blank=True)
+    status = models.CharField(max_length=10, default="pending")  # pending / sent / failed / closed
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.CharField(max_length=255, blank=True)
+    # Фото заявки (альбоми) надсилаються один раз: повторна спроба надсилає лише повідомлення з кнопками.
+    media_done = models.BooleanField(default=False, db_default=False)
+    media_message_id = models.BigIntegerField(null=True, blank=True)  # перше повідомлення першого альбому
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Telegram-повідомлення модерації"
+        verbose_name_plural = "Telegram-повідомлення модерації"
+        constraints = [models.UniqueConstraint(fields=["property", "version"], name="unique_tg_message_per_version")]
+
+
+class TelegramRejectPrompt(models.Model):
+    """Очікування причини відхилення: бот попросив модератора відповісти на повідомлення з причиною."""
+
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="+")
+    version = models.PositiveIntegerField()
+    telegram_user_id = models.BigIntegerField()
+    chat_id = models.CharField(max_length=32)
+    prompt_message_id = models.BigIntegerField()
+    used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["chat_id", "prompt_message_id"], name="unique_tg_reject_prompt")]

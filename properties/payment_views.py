@@ -15,7 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
 from . import liqpay
-from .models import Payment, PaymentEvent, PaymentStatus, Property
+from .models import Payment, PaymentEvent, PaymentStatus, Property, Tariff
 from .placement import (
     PlacementError,
     can_pay_for,
@@ -35,7 +35,7 @@ STATUS_CHECK_INTERVAL_SECONDS = 10
 @require_POST
 def start_payment(request, pk):
     """
-    Оплата розміщення (99 UAH за тарифом; суму визначає сервер) через LiqPay Checkout.
+    Оплата розміщення або просування (тариф з форми; суму й термін визначає сервер) через LiqPay Checkout.
     Лише власник оголошення (перевірка на сервері за request.user). Якщо незавершена оплата
     вже існує — продовжується вона (той самий order_id), нова не створюється.
     """
@@ -46,8 +46,18 @@ def start_payment(request, pk):
         messages.info(request, "Онлайн-оплата тимчасово недоступна.")
         return redirect("properties:payment", pk=pk)
     config = liqpay.LiqPayConfig.from_settings()
+    # Тариф — лише активний, за кодом із форми; ціну й термін визначає сервер. Без коду — розміщення.
+    code = request.POST.get("tariff") or Tariff.PLACEMENT_CODE
+    tariff = Tariff.objects.filter(code=code, is_active=True).first()
+    if tariff is None:
+        messages.error(request, "Цей тариф недоступний. Оберіть інший.")
+        return redirect("properties:payment", pk=pk)
 
     existing = open_payment_for(prop)
+    if existing is not None and existing.tariff_id != tariff.pk and not liqpay.is_stale(existing):
+        messages.error(request, f"Є незавершена оплата «{existing.tariff_name}». Продовжте або скасуйте її, "
+                                "щоб обрати іншу послугу.")
+        return redirect("properties:payment", pk=pk)
     if existing is not None:
         if liqpay.is_stale(existing):
             # Перш ніж закрити прострочену оплату й дозволити нову, уточнюємо її стан у LiqPay:
@@ -72,7 +82,7 @@ def start_payment(request, pk):
             return redirect("properties:payment", pk=pk)
 
     try:
-        payment, _created = get_or_create_open_payment(request.user, prop, is_test=config.sandbox)
+        payment, _created = get_or_create_open_payment(request.user, prop, is_test=config.sandbox, tariff=tariff)
     except PlacementError as exc:
         messages.error(request, str(exc))
         return redirect("properties:payment", pk=pk)

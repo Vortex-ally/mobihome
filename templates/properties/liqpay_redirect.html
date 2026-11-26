@@ -4,7 +4,7 @@
 {% block content %}
 <div class="wrap py-5 text-center" style="max-width: 560px;">
     <h1 class="h4 mb-3" style="color: var(--text);">Перехід до оплати LiqPay</h1>
-    <p class="mb-1" style="color: var(--text);">{{ payment.tariff_name }}: <strong>{{ payment.amount|floatformat:"0g" }} {{ payment.currency }}</strong> за {{ payment.duration_days }} днів.</p>
+    <p class="mb-1" style="color: var(--text);">{{ payment.tariff_name }}: <strong>{{ payment.amount|floatformat:"0g" }} {{ payment.currency }}</strong> на {{ payment.duration_label }}.</p>
     <p class="small mb-4" style="color: var(--text-muted);">Дані картки вводяться лише на захищеній сторінці LiqPay. Наш сайт їх не отримує і не зберігає.</p>
     {% if payment.is_test %}<p class="small mb-4"><span class="badge text-bg-warning">Тестовий режим: реальні кошти не списуються</span></p>{% endif %}
     {# Поля data/signature сформовані сервером; зміна суми в браузері зламає підпис. #}

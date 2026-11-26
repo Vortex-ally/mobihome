@@ -1,12 +1,14 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path, reverse_lazy
 
-from . import payment_views, views
+from . import payment_views, private_files, views
 
 app_name = "properties"
 
 urlpatterns = [
     path("", views.index, name="index"),
+    path("healthz/", views.healthz, name="healthz"),
+    path("staff/verification-report/<path:name>", private_files.private_report, name="private_report"),
     path("catalog/", views.home, name="home"),
     path("catalog/", views.home, name="catalog"),
     path("about/", views.about, name="about"),
@@ -20,6 +22,7 @@ urlpatterns = [
     path("compare/", views.compare_properties, name="compare_properties"),
     path("property/<int:pk>/favorite/", views.toggle_favorite, name="toggle_favorite"),
     path("property/<int:pk>/delete/", views.delete_property, name="delete_property"),
+    path("property/<int:pk>/edit/", views.edit_listing, name="edit_listing"),
     path("audit/request/", views.request_audit, name="request_audit"),
     path("audit/request/<int:property_id>/", views.request_audit, name="request_audit_property"),
     path("audit/new/", views.auditor_form, name="auditor_form_new"),
@@ -34,7 +37,7 @@ urlpatterns = [
     path("auth/coming-soon/", views.coming_soon, name="coming_soon"),
     path(
         "auth/password-reset/",
-        auth_views.PasswordResetView.as_view(
+        views.RateLimitedPasswordResetView.as_view(
             template_name="registration/password_reset_form.html",
             email_template_name="registration/password_reset_email.html",
             success_url=reverse_lazy("properties:password_reset_done"),

@@ -1,0 +1,20 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block dark-mode-vars %}
+  {# Єдина тема адмінки — темна (вимога замовника): перемикач теми Django прихований, світлу тему не застосовуємо. #}
+  <script>try { localStorage.setItem('theme', 'dark'); } catch (e) {} document.documentElement.dataset.theme = 'dark';</script>
+  {{ block.super }}
+  <style>.theme-toggle { display: none !important; }</style>
+{% endblock %}
+
+{% block branding %}
+<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

@@ -105,7 +105,8 @@ class AddListingForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["photo"].required = True
+        # Нове оголошення — фото обов'язкове; під час редагування наявне фото зберігається без повторного завантаження.
+        self.fields["photo"].required = not (self.instance and self.instance.pk and self.instance.photo)
         for name in ("floor", "total_floors"):
             self.fields[name].min_value = 1
             self.fields[name].validators.append(MinValueValidator(1))

@@ -75,6 +75,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Статика (зокрема CSS/JS адмінки) роздається й при DEBUG=False — runserver/gunicorn без nginx.
+    # За nginx /static/ обслуговує nginx, запит сюди не доходить.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -96,6 +99,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "properties.context_processors.current_url_name",
+                "properties.context_processors.site_contacts",
             ],
         },
     },
@@ -109,6 +113,18 @@ DATABASES = {
         "NAME": DATABASE_PATH,
     }
 }
+# PostgreSQL (production): DJANGO_DB_ENGINE=postgresql + параметри підключення. Потрібен пакет
+# psycopg (pip install "psycopg[binary]"). Без змінної — SQLite, як і раніше.
+if os.environ.get("DJANGO_DB_ENGINE", "").lower() in ("postgresql", "postgres"):
+    DATABASES["default"] = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DJANGO_DB_NAME", "mobihome"),
+        "USER": os.environ.get("DJANGO_DB_USER", "mobihome"),
+        "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", ""),
+        "HOST": os.environ.get("DJANGO_DB_HOST", "127.0.0.1"),
+        "PORT": os.environ.get("DJANGO_DB_PORT", "5432"),
+        "CONN_MAX_AGE": int(os.environ.get("DJANGO_DB_CONN_MAX_AGE", "60")),
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -125,11 +141,20 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 STATIC_ROOT = Path(os.environ.get("DJANGO_STATIC_ROOT", BASE_DIR / "staticfiles"))
+# WhiteNoise шукає файли й у застосунках (без обов'язкового collectstatic локально); у production
+# після collectstatic файли беруться зі STATIC_ROOT. Стиснення/кешування — без зміни імен файлів.
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_MAX_AGE = 3600
+# Медіа (фото оголошень) через Django — для локального запуску з DEBUG=False. У production
+# /media/ віддає nginx (deploy/nginx-mobihome.conf), тож цей маршрут туди не доходить.
+SERVE_MEDIA = env_bool("DJANGO_SERVE_MEDIA", True)
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = Path(os.environ.get("DJANGO_MEDIA_ROOT", BASE_DIR / "media"))
+# Приватні файли (звіти перевірок житла): поза MEDIA_ROOT, не роздаються вебсервером.
+PRIVATE_MEDIA_ROOT = Path(os.environ.get("DJANGO_PRIVATE_MEDIA_ROOT", BASE_DIR / "data" / "private"))
 
 # Пошта (для скидання пароля). У розробці — у консоль; у production — SMTP через env.
 EMAIL_BACKEND = os.environ.get(
@@ -143,7 +168,7 @@ EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("DJANGO_EMAIL_USE_TLS", True)
-DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "mobi home <noreply@localhost>")
+DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "mobi Home <noreply@localhost>")
 
 LOGIN_URL = "/auth/"
 
@@ -164,6 +189,13 @@ if env_bool("DJANGO_BEHIND_PROXY", False):
 # Обмеження розміру завантажень (10 МБ на запит у пам'яті)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
+# Контакти сайту (підвал, віджет підтримки, сторінка «Контакти», листи). За замовчуванням — контакти,
+# затверджені замовником; змінюються в .env без змін коду. Телефон — у міжнародному форматі (+380…).
+SITE_PHONE = os.environ.get("SITE_PHONE", "+380991053309")
+SITE_OFFICE_PHONE = os.environ.get("SITE_OFFICE_PHONE", "+380991053309")
+SITE_EMAIL = os.environ.get("SITE_EMAIL", "dominikyarem@gmail.com")
+SITE_SUPPORT_EMAIL = os.environ.get("SITE_SUPPORT_EMAIL", "dominikyarem@gmail.com")
 
 LOGGING = {
     "version": 1,
@@ -186,6 +218,9 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # Telegram Login Widget. Порожній токен = вхід через Telegram вимкнено.
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_BOT_NAME = os.environ.get("TELEGRAM_BOT_NAME", "")
+# Telegram-бот модерації (той самий токен бота). Без увімкнення/чату — нічого не надсилається.
+TELEGRAM_BOT_ENABLED = env_bool("TELEGRAM_BOT_ENABLED", False)
+TELEGRAM_MODERATION_CHAT_ID = os.environ.get("TELEGRAM_MODERATION_CHAT_ID", "").strip()
 
 # Дія: тимчасово вимкнено до появи справжньої інтеграції.
 DIIA_ENABLED = False

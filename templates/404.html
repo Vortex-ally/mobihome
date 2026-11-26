@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}Сторінку не знайдено — mobi Home{% endblock %}
+{% block content %}
+<div class="wrap py-5 text-center" style="max-width: 560px;">
+    <p class="display-5 fw-semibold mb-2" style="color: var(--accent-warm);">404</p>
+    <h1 class="h4 mb-3" style="color: var(--text);">Сторінку не знайдено</h1>
+    <p class="text-muted mb-4">Можливо, оголошення знято з публікації або адресу введено з помилкою.</p>
+    <div class="d-flex flex-wrap justify-content-center gap-2">
+        <a href="{% url 'properties:home' %}" class="btn btn-primary">До каталогу</a>
+        <a href="{% url 'properties:index' %}" class="btn btn-outline-secondary">На головну</a>
+    </div>
+</div>
+{% endblock %}
