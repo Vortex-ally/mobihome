@@ -86,7 +86,7 @@
 </div>
 
 {% if promotions %}
-<h2 class="h5 mt-5 mb-2" style="color: var(--text);">Просування в каталозі</h2>
+<h2 id="promotion" class="h5 mt-5 mb-2" style="color: var(--text); scroll-margin-top: 90px;">Просування в каталозі</h2>
 <p class="small text-muted mb-3">Платні послуги діють лише після підтвердження оплати LiqPay{% if not catalog_visible %} і починаються з моменту публікації оголошення після модерації{% endif %}. Після завершення терміну оголошення автоматично повертається до звичайного показу.</p>
 {% if current_promotion and current_promotion.promo_rank %}
 <div class="alert alert-success mb-3" role="status">Діє просування «{% if current_promotion.promo_rank == 1 %}ТОП №1{% elif current_promotion.promo_rank == 3 %}ТОП №3{% else %}Активна публікація{% endif %}» до <strong>{{ current_promotion.promo_until|date:"d.m.Y H:i" }}</strong>.</div>
@@ -101,17 +101,17 @@
             <p class="mb-1"><strong class="fs-5" style="color: var(--text);">{{ t.price|floatformat:"0" }} грн</strong> <span class="small text-muted">/ {{ t.duration_label }}</span></p>
             <p class="small text-muted flex-grow-1 mb-3">{{ t.description }}</p>
             {% if payments_enabled and can_pay and not open_payment %}
-            <form method="post" action="{% url 'properties:start_payment' property.pk %}">
+            <form method="post" action="{% url 'properties:start_payment' property.pk %}" class="mt-auto">
                 {% csrf_token %}
                 <input type="hidden" name="tariff" value="{{ t.code }}">
-                <button type="submit" class="btn {% if t.promotion_rank == 1 %}btn-success{% else %}btn-outline-success{% endif %} w-100">Оплатити {{ t.price|floatformat:"0" }} грн</button>
+                <button type="submit" class="btn {% if t.promotion_rank == 1 %}btn-success{% else %}btn-outline-success{% endif %} w-100 promotion-pay-btn">Оплатити {{ t.price|floatformat:"0" }} грн</button>
             </form>
-            {% elif payments_enabled and open_payment %}
-            <p class="small text-muted mb-0">Спершу завершіть або скасуйте незавершену оплату.</p>
-            {% elif payments_enabled %}
-            <p class="small text-muted mb-0">Оплату здійснює лише власник оголошення.</p>
             {% else %}
-            <p class="small text-muted mb-0">Онлайн-оплата буде доступна найближчим часом.</p>
+            {# Сервер однаково відхилить оплату (start_payment); кнопка лише показує ціну тарифу. #}
+            <div class="mt-auto">
+                <button type="button" class="btn btn-outline-secondary w-100 promotion-pay-btn" disabled aria-disabled="true" aria-describedby="pay-note-{{ t.code }}">Оплатити {{ t.price|floatformat:"0" }} грн</button>
+                <p id="pay-note-{{ t.code }}" class="small text-muted mt-2 mb-0">{% if not payments_enabled %}Онлайн-оплата тимчасово недоступна.{% elif open_payment %}Спершу завершіть або скасуйте незавершену оплату.{% else %}Оплату здійснює лише власник оголошення.{% endif %}</p>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -142,4 +142,10 @@
     <a href="{% url 'properties:property_detail' property.pk %}" class="btn btn-outline-secondary btn-sm">Переглянути оголошення</a>
 </p>
 </div>
+<style>
+.promotion-pay-btn { min-height: 44px; font-weight: 600; }
+.promotion-pay-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: none; }
+.promotion-pay-btn.btn-outline-success:hover { color: #fff; }
+.promotion-pay-btn:disabled { opacity: 0.55; cursor: not-allowed; color: var(--text-muted); border-color: var(--border); background: transparent; }
+</style>
 {% endblock %}

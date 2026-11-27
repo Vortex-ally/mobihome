@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}{% if edited %}Зміни збережено{% else %}Оголошення збережено{% endif %} — mobi Home{% endblock %}
+
+{% block content %}
+<div class="wrap">
+<div class="card card-premium card-body listing-saved mx-auto" style="max-width: 760px;">
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="listing-saved-icon" aria-hidden="true">✓</span>
+        <h1 class="h4 mb-0" style="color: var(--text);">{% if edited %}Зміни збережено{% else %}Оголошення збережено{% endif %}</h1>
+    </div>
+    <p class="mb-2 text-break" style="color: var(--text);"><strong>{{ property.name }}</strong></p>
+    {% if catalog_visible %}
+    <p class="small text-muted mb-4">Оголошення опубліковано в каталозі.</p>
+    {% elif property.moderation_status == 'pending' %}
+    <p class="small text-muted mb-4" role="status">Оголошення надіслано на модерацію. Після перевірки модератором воно з'явиться в каталозі. Публікація безкоштовна.</p>
+    {% else %}
+    <p class="small text-muted mb-4">{{ property.get_moderation_status_display }}.</p>
+    {% endif %}
+
+    <div class="listing-saved-promo pt-3 border-top" style="border-color: var(--border) !important;">
+        <h2 class="h6 mb-2" style="color: var(--text);">Більше переглядів — за бажанням</h2>
+        <p class="small text-muted mb-3">Просування (ТОП, активна публікація) — необов'язкова платна послуга. Воно діє після підтвердженої оплати й публікації оголошення, не замінює модерацію і не дає позначки «Перевірене житло».</p>
+        {% if not payments_enabled %}
+        <p class="small mb-3" style="color: var(--text);" role="status">Онлайн-оплата просування зараз недоступна. Придбати його можна буде пізніше в особистому кабінеті.</p>
+        {% endif %}
+        <div class="d-flex flex-column flex-sm-row flex-wrap gap-2">
+            {% if can_promote %}
+            <a href="{% url 'properties:payment' property.pk %}#promotion" class="btn btn-success px-4 py-2">Просунути оголошення</a>
+            {% endif %}
+            <a href="{% url 'properties:profile' %}" class="btn btn-outline-secondary px-4 py-2">{% if can_promote %}Пропустити{% else %}До особистого кабінету{% endif %}</a>
+            <a href="{% url 'properties:property_detail' property.pk %}" class="btn btn-link px-2 py-2">Переглянути оголошення</a>
+        </div>
+        <p class="small text-muted mt-3 mb-0">Просування можна придбати й пізніше: «Особистий кабінет» → «Мої оголошення» → «Просунути оголошення».</p>
+    </div>
+</div>
+</div>
+<style>
+.listing-saved-icon { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 50%; background: rgba(25, 135, 84, 0.18); color: #34d399; font-weight: 700; flex-shrink: 0; }
+</style>
+{% endblock %}

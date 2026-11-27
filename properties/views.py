@@ -840,7 +840,7 @@ def login_view(request):
 
 @login_required(login_url="/auth/")
 def add_listing(request):
-    """Форма додавання оголошення (всі поля + рівні доступності). Після збереження — редірект на оплату."""
+    """Форма додавання оголошення (всі поля + рівні доступності). Після збереження — сторінка підтвердження."""
     return _listing_form(request, None)
 
 
@@ -873,11 +873,10 @@ def _listing_form(request, instance):
             # Нове або змінене оголошення — у чергу модерації (спільний сервіс: історія, Telegram).
             from . import moderation
             moderation.submit(prop.pk, actor=request.user, source=moderation.ModerationSource.OWNER)
-            if editing:
-                messages.success(request, "Зміни збережено. Оголошення знову перевірить модератор.")
-            else:
-                messages.success(request, "Оголошення збережено. Оберіть спосіб публікації.")
-            return redirect("properties:payment", pk=prop.pk)
+            # Публікація безкоштовна: жодного переходу до оплати — лише підтвердження з необов'язковою
+            # кнопкою «Просунути оголошення» (тарифи відкриваються тільки після її натискання).
+            url = reverse("properties:listing_saved", args=[prop.pk])
+            return redirect(url + "?edited=1" if editing else url)
         else:
             messages.error(request, "Виправте помилки у формі.")
     else:
@@ -918,6 +917,28 @@ def _listing_form(request, instance):
         "property": instance,
     }
     return render(request, "properties/add_listing.html", context)
+
+
+@login_required(login_url="/auth/")
+def listing_saved(request, pk):
+    """
+    Після збереження оголошення: підтвердження, статус модерації, необов'язкове просування.
+    Тарифи й оплата — лише після натискання «Просунути оголошення» (сторінка «Публікація оголошення»).
+    """
+    from .liqpay import payments_active
+    from .placement import can_pay_for
+
+    prop = get_object_or_404(Property, pk=pk)
+    if not _can_manage_property(request.user, prop) or prop.archived_at:
+        raise Http404("Оголошення не знайдено.")
+    payments_enabled = payments_active()
+    return render(request, "properties/listing_saved.html", {
+        "property": prop,
+        "edited": request.GET.get("edited") == "1",
+        "payments_enabled": payments_enabled,
+        "can_promote": payments_enabled and can_pay_for(request.user, prop) and Tariff.promotions().exists(),
+        "catalog_visible": is_catalog_visible(prop),
+    })
 
 
 def logout_view(request):
@@ -1001,8 +1022,12 @@ def profile(request):
         )
         audit_requests = AuditRequest.objects.all().select_related("property", "applicant").order_by("-created_at")
 
+    from .liqpay import payments_active
+
     context = {
-        "user_listings": user_listings, 
+        "user_listings": user_listings,
+        # Кнопка «Просунути оголошення» біля власних оголошень (оплата — лише власником, на сторінці тарифів).
+        "promotion_available": payments_active() and Tariff.promotions().exists(),
         "favorite_listings": favorite_listings,
         "user_payments": user_payments,
         "owner_stats": owner_stats,

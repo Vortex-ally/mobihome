@@ -23,6 +23,7 @@ urlpatterns = [
     path("property/<int:pk>/favorite/", views.toggle_favorite, name="toggle_favorite"),
     path("property/<int:pk>/delete/", views.delete_property, name="delete_property"),
     path("property/<int:pk>/edit/", views.edit_listing, name="edit_listing"),
+    path("property/<int:pk>/saved/", views.listing_saved, name="listing_saved"),
     path("audit/request/", views.request_audit, name="request_audit"),
     path("audit/request/<int:property_id>/", views.request_audit, name="request_audit_property"),
     path("audit/new/", views.auditor_form, name="auditor_form_new"),

@@ -29,8 +29,8 @@ Demo-середовище вже створено (25.11): копія основ
 |---|---|---|---|
 | 1 | Темний дизайн, мобільна версія | Головна, каталог (390 px) | Темна тема, без горизонтального скролу |
 | 2 | Контакти | Підвал, кнопка підтримки, «Контакти» | 099 105 3309, dominikyarem@gmail.com, `tel:`/`mailto:` відкриваються |
-| 3 | Створення оголошення | demo_user → «Додати оголошення» (з фото) | Сторінка «Публікація оголошення» |
-| 4 | Безкоштовно + пропозиції просування | та сама сторінка | «0 грн» + 80 / 100 / 120 / 200 грн; пояснення, що оплата не замінює модерацію |
+| 3 | Створення оголошення | demo_user → «Додати оголошення» (з фото) → «Зберегти» | «Оголошення збережено», на модерації; без переходу до оплати |
+| 4 | Просування — за бажанням | «Просунути оголошення» (або «Пропустити»; пізніше — у кабінеті біля оголошення) | Тарифи 80 / 100 / 120 / 200 грн; оплата не замінює модерацію |
 | 5 | Не в каталозі до схвалення | Каталог | Нового оголошення немає |
 | 6 | Черга модерації | demo_moder → /admin/ → «Черга модерації» | Заявка в черзі; в меню немає користувачів, платежів, тарифів |
 | 7 | Права модератора | demo_moder → оголошення | Дані оголошення лише для перегляду; редагуються тільки поля модерації |
@@ -66,6 +66,26 @@ Demo-середовище вже створено (25.11): копія основ
 6. В іншому терміналі: `set -a; . ./data/demo_telegram_env.sh; set +a; venv/bin/python manage.py telegram_moderation_bot --once`, далі без `--once`.
 7. Перевірка: demo_user подає оголошення → повідомлення в групі → «Підтвердити» / «Відхилити» (причина відповіддю) → статус у кабінеті та «Історії модерації» (джерело — Telegram).
 
+## Оплата в sandbox (ручна перевірка кнопок «Оплатити …»)
+
+Окреме середовище `data/paytest_env.sh` (поза Git): копія demo-бази `data/db.paytest.sqlite3`, медіа `data/media-paytest/`,
+порт 8012, лише LiqPay **sandbox** (ключі `sandbox_…` з `.env`; з бойовим ключем сервер не стартує), Telegram вимкнено.
+Demo-сайт (8010) і бот не зачіпаються; гроші не списуються.
+
+```bash
+cd ~/Desktop/mobihome
+# один раз (або щоб почати з чистої копії): копія demo-бази без її зміни
+python3 -c "import sqlite3; s=sqlite3.connect('file:data/db.demo.sqlite3?mode=ro', uri=True); d=sqlite3.connect('data/db.paytest.sqlite3'); s.backup(d); d.close()"
+rm -rf data/media-paytest && cp -a data/media-demo data/media-paytest && mkdir -p data/private-paytest
+set -a; . ./data/paytest_env.sh; set +a
+venv/bin/python manage.py migrate
+venv/bin/python manage.py runserver 127.0.0.1:8012
+```
+
+http://127.0.0.1:8012/ → `demo_user` → «Додати оголошення» → «Зберегти» → «Просунути оголошення» → «Оплатити 80 грн» →
+сторінка LiqPay (тестова картка `4242 4242 4242 4242`, будь-який майбутній термін і CVV) → повернення на сайт: статус
+уточнюється запитом до LiqPay (callback на localhost не надходить). Оголошення лишається на модерації.
+
 ## Після демо
 
-Demo-файли (`data/db.demo.sqlite3`, `data/media-demo/`, `data/private-demo/`, `data/static-demo/`, `data/demo_env.sh`, `data/demo_telegram_env.sh`, `data/demo_telegram.secrets`, `data/demo_credentials.txt`) ігноруються Git; після демо їх можна видалити. Резервну копію з `data/backups/` збережіть.
+Demo-файли (`data/db.demo.sqlite3`, `data/media-demo/`, `data/private-demo/`, `data/static-demo/`, `data/demo_env.sh`, `data/demo_telegram_env.sh`, `data/demo_telegram.secrets`, `data/demo_credentials.txt`, `data/paytest_env.sh`, `data/db.paytest.sqlite3`, `data/media-paytest/`) ігноруються Git; після демо їх можна видалити. Резервну копію з `data/backups/` збережіть.

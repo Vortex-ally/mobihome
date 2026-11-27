@@ -107,7 +107,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(64))"   # значенн
 | `DJANGO_MEDIA_ROOT`, `DJANGO_STATIC_ROOT` | `/srv/mobihome/media`, `/srv/mobihome/staticfiles` |
 | `DJANGO_PRIVATE_MEDIA_ROOT` | `/srv/mobihome/data/private` — звіти перевірок житла (вебсервер їх не роздає) |
 | `SITE_URL` | `https://mobihome.example` (без `/` у кінці) |
-| `SITE_PHONE`, `SITE_OFFICE_PHONE`, `SITE_EMAIL`, `SITE_SUPPORT_EMAIL` | необов'язково: типово +380991053309 / dominikyarem@gmail.com |
+| `SITE_PHONE`, `SITE_OFFICE_PHONE`, `SITE_EMAIL`, `SITE_SUPPORT_EMAIL`, `SITE_ADDRESS`, `SITE_TELEGRAM_SUPPORT` | необов'язково: типово +380991053309 / dominikyarem@gmail.com / «Львів, Україна» / `Yaremchuk06` (Telegram підтримки, не бот модерації) |
 | `DJANGO_EMAIL_*`, `DJANGO_DEFAULT_FROM_EMAIL` | SMTP — інакше листи відновлення пароля не надсилаються |
 | `TELEGRAM_BOT_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_MODERATION_CHAT_ID` | див. §14 |
 | `PAYMENTS_ENABLED` / `PLACEMENT_PAYMENT_REQUIRED` / `LIQPAY_SANDBOX` | `False` / `False` / `True` до §18 |

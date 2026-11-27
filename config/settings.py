@@ -212,6 +212,10 @@ SITE_PHONE = os.environ.get("SITE_PHONE", "+380991053309")
 SITE_OFFICE_PHONE = os.environ.get("SITE_OFFICE_PHONE", "+380991053309")
 SITE_EMAIL = os.environ.get("SITE_EMAIL", "dominikyarem@gmail.com")
 SITE_SUPPORT_EMAIL = os.environ.get("SITE_SUPPORT_EMAIL", "dominikyarem@gmail.com")
+# Місцезнаходження компанії (лише місто — фізичної адреси офісу замовник не надавав).
+SITE_ADDRESS = os.environ.get("SITE_ADDRESS", "Львів, Україна")
+# Telegram підтримки (окремо від бота модерації): username без @ або посилання https://t.me/<username>.
+SITE_TELEGRAM_SUPPORT = os.environ.get("SITE_TELEGRAM_SUPPORT", "Yaremchuk06")
 
 LOGGING = {
     "version": 1,

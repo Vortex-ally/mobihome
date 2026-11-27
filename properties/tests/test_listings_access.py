@@ -26,7 +26,7 @@ class ModerationFlowTests(TestCase):
              "price": "100", "photo": make_image()},
         )
         prop = Property.objects.get(name="Нова")
-        self.assertRedirects(resp, f"/payment/{prop.pk}/", fetch_redirect_response=False)
+        self.assertRedirects(resp, f"/property/{prop.pk}/saved/", fetch_redirect_response=False)  # не на оплату
         self.assertEqual(prop.owner, self.owner)
         self.assertEqual(prop.moderation_status, ModerationStatus.PENDING)
 

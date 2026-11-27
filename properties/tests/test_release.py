@@ -30,7 +30,8 @@ class EditListingTests(TestCase):
         self.client.force_login(self.owner)
         self.assertContains(self.client.get(self.url), "Редагувати оголошення")
         resp = self.client.post(self.url, listing_data())
-        self.assertRedirects(resp, reverse("properties:payment", args=[self.prop.pk]), fetch_redirect_response=False)
+        self.assertRedirects(resp, reverse("properties:listing_saved", args=[self.prop.pk]) + "?edited=1",
+                             fetch_redirect_response=False)
         self.prop.refresh_from_db()
         self.assertEqual((self.prop.name, self.prop.city, self.prop.rooms, self.prop.area_sqm, self.prop.floor),
                          ("Оновлена квартира", "Львів", 3, 70.0, 2))
@@ -85,19 +86,19 @@ class EditListingTests(TestCase):
 
 
 class CreateListingTests(TestCase):
-    def test_create_with_photos_goes_to_publication_choice(self):
+    def test_create_with_photos_goes_to_saved_confirmation(self):
         owner = make_user("owner")
         self.client.force_login(owner)
         resp = self.client.post(reverse("properties:add_listing"), {
             **listing_data(name="Нова"), "photo": make_image("m.png"), "extra_photos": [make_image("x.png")]})
         prop = Property.objects.get(name="Нова")
-        self.assertRedirects(resp, reverse("properties:payment", args=[prop.pk]), fetch_redirect_response=False)
+        self.assertRedirects(resp, reverse("properties:listing_saved", args=[prop.pk]), fetch_redirect_response=False)
         # Нове оголошення одразу в черзі модерації (не в каталозі до схвалення).
         self.assertEqual((prop.owner_id, prop.moderation_status, prop.extra_photos.count()),
                          (owner.pk, ModerationStatus.PENDING, 1))
         self.assertFalse(Property.objects.public().filter(pk=prop.pk).exists())
         self.assertTrue(prop.moderation_events.filter(action="submitted", source="owner").exists())
-        self.assertContains(self.client.get(resp["Location"]), "Безкоштовна публікація")
+        self.assertContains(self.client.get(resp["Location"]), "Оголошення збережено")
 
     def test_photo_required_and_non_image_rejected(self):
         self.client.force_login(make_user("owner"))

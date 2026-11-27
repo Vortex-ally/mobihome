@@ -391,9 +391,9 @@
     {% if user_listings %}
     <div class="listing-cards">
         {% for prop in user_listings %}
-        <a href="{% url 'properties:property_detail' prop.pk %}" class="profile-listing-card card card-premium text-decoration-none d-block mb-3">
+        <div class="profile-listing-card card card-premium d-block mb-3 position-relative">
             <div class="card-body py-3 px-4 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                <span class="profile-listing-name">{{ prop.name }}</span>
+                <a href="{% url 'properties:property_detail' prop.pk %}" class="profile-listing-name text-decoration-none stretched-link">{{ prop.name }}</a>
                 <span class="profile-listing-meta">
                     {% if prop.moderation_status == 'approved' %}
                         <span class="badge profile-badge profile-badge--published">🟢 Схвалено</span>
@@ -412,9 +412,12 @@
                     {% if prop.placement_until %}
                     <span class="small ms-2" style="color: var(--text-muted);">{% if prop.placement_active %}Розміщено до {{ prop.placement_until|date:"d.m.Y" }}{% else %}Розміщення завершилось {{ prop.placement_until|date:"d.m.Y" }}{% endif %}</span>
                     {% endif %}
+                    {% if promotion_available and prop.moderation_status != 'rejected' %}
+                    <a href="{% url 'properties:payment' prop.pk %}#promotion" class="btn btn-outline-success btn-sm ms-2 position-relative profile-promote-btn">Просунути оголошення</a>
+                    {% endif %}
                 </span>
             </div>
-        </a>
+        </div>
         {% endfor %}
     </div>
     {% else %}
@@ -469,6 +472,7 @@
 </div>
 
 <style>
+.profile-promote-btn { z-index: 2; }
 .profile-payments-table th { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
 .profile-payments-table td { font-size: 0.875rem; color: var(--text); }
 .payment-status { text-decoration: none; }
