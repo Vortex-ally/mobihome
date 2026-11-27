@@ -1,0 +1,14 @@
+    <meta name="robots" content="{{ m.robots }}">
+    <link rel="canonical" href="{{ m.canonical }}">
+    <meta property="og:type" content="{{ m.og_type|default:'website' }}">
+    <meta property="og:site_name" content="mobi Home">
+    <meta property="og:locale" content="uk_UA">
+    <meta property="og:title" content="{{ m.title }}">
+    <meta property="og:description" content="{{ m.description }}">
+    <meta property="og:url" content="{{ m.canonical }}">
+    {% if m.image %}<meta property="og:image" content="{{ m.image }}">{% endif %}
+    <meta name="twitter:card" content="{% if m.image %}summary_large_image{% else %}summary{% endif %}">
+    <meta name="twitter:title" content="{{ m.title }}">
+    <meta name="twitter:description" content="{{ m.description }}">
+    {% if m.image %}<meta name="twitter:image" content="{{ m.image }}">{% endif %}
+    {{ m.jsonld }}

@@ -4,8 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}mobi Home{% endblock %}</title>
-    <meta name="description" content="{% block meta_description %}Система підбору та оголошень доступного житла. Знайдіть квартиру без бар'єрів — mobi Home.{% endblock %}">
+    <title>{% block title %}{{ seo.title }}{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{{ seo.description }}{% endblock %}">
+{% block seo_meta %}{% include "includes/seo_meta.html" with m=seo %}{% endblock %}
     <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
     <link rel="manifest" href="{% static 'manifest.json' %}">
     <meta name="theme-color" content="#0d1412">

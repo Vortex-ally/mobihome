@@ -53,3 +53,10 @@ def site_contacts(request):
         "address": settings.SITE_ADDRESS,
         "telegram_url": telegram_url, "telegram": telegram_handle,
     }}
+
+
+def seo(request):
+    """SEO-метадані поточної сторінки (title, description, canonical, robots, OG, JSON-LD)."""
+    from .seo import page_seo
+
+    return {"seo": page_seo(request)}

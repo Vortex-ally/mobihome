@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
-{% load static %}
-{% block title %}{{ property.name }} — mobi Home{% endblock %}
+{% load static seo_tags %}
+{% block title %}{% listing_seo property as m %}{{ m.title }}{% endblock %}
+{% block meta_description %}{% listing_seo property as m %}{{ m.description }}{% endblock %}
+{% block seo_meta %}{% listing_seo property as m %}{% include "includes/seo_meta.html" with m=m %}{% endblock %}
 
 {% block content %}
 <div class="wrap" style="font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;">

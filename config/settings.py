@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sitemaps",
     "properties",
 ]
 
@@ -84,6 +85,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "properties.seo.RobotsHeaderMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -100,6 +102,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "properties.context_processors.current_url_name",
                 "properties.context_processors.site_contacts",
+                "properties.context_processors.seo",
             ],
         },
     },
@@ -268,6 +271,13 @@ LIQPAY_API_URL = "https://www.liqpay.ua/api/request"
 LIQPAY_PAYMENT_TTL_MINUTES = int(os.environ.get("LIQPAY_PAYMENT_TTL_MINUTES", "60"))
 # Публічна адреса сайту (https://домен) для server_url/result_url.
 SITE_URL = os.environ.get("SITE_URL", "").rstrip("/")
+
+# SEO: canonical/sitemap завжди на production-домені. Індексація дозволена лише при
+# SEO_ALLOW_INDEXING=True (за замовчуванням = не DEBUG) І хості запиту з SEO_INDEXABLE_HOSTS;
+# інакше (локально, demo, sandbox/trycloudflare) — robots.txt "Disallow: /" і noindex.
+SEO_BASE_URL = os.environ.get("SEO_BASE_URL", "https://mobihome.org").rstrip("/")
+SEO_ALLOW_INDEXING = env_bool("SEO_ALLOW_INDEXING", not DEBUG)
+SEO_INDEXABLE_HOSTS = [h.lower() for h in env_list("SEO_INDEXABLE_HOSTS", "mobihome.org,www.mobihome.org")]
 
 # Fail-fast: неправильна production-конфігурація оплати зупиняє запуск (gunicorn/manage.py).
 # У DEBUG (локальна розробка) ті самі проблеми показує `manage.py check`, але запуск не блокується.
